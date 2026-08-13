@@ -1,83 +1,96 @@
-## Dotfiles
----
-![](https://img.shields.io/badge/works%20on-OS%20X-D376B3.svg)
-![](https://img.shields.io/badge/works%20on-Ubuntu-DD4814.svg)
+# Dotfiles
 
-To install these dotfiles you should run the following command:
+![](https://img.shields.io/badge/works%20on-macOS-D376B3.svg)
+![](https://img.shields.io/badge/works%20on-Linux-DD4814.svg)
 
-```
-pip install ansible
-export PATH=$PATH:~/Library/Python/2.7/bin/
-ansible-playbook -i "localhost," -c local -K playbooks/all.yml
-```
-If any issue with not having pip3, you need to update python2.7 to python3
-`brew update python3`
-It'll install on your computer:
+My zsh, tmux, neovim and editorconfig setup. One script, one set of configs,
+same behaviour on macOS and Linux.
 
-- python
-- neovim
-- tmux
-- curl
-- zsh
+## Install
 
-Then you should install Neovim plugins (just exec following):
-
-```
-:PlugInstall
+```sh
+git clone https://github.com/amb1s1/amb1s1-dotfile.git ~/.dotfiles
+cd ~/.dotfiles
+./install.sh
 ```
 
-And compile YouComplteMe: https://github.com/Valloric/YouCompleteMe#installation
+That will:
 
-That's all what you need to do to use these dotfiles.
+1. Install `git`, `zsh`, `tmux`, `neovim`, `curl`, `fzf`, `ripgrep` and `bat`
+   using whichever package manager is present — Homebrew, apt, dnf or pacman.
+   On macOS it installs Homebrew first if it is missing.
+2. Install oh-my-zsh plus the autosuggestions and syntax-highlighting plugins.
+3. Symlink the configs into your home directory.
+4. Make zsh your default shell.
 
-![](https://raw.githubusercontent.com/daynin/dotfiles/master/imgs/dotfiles1.png)
-![](https://raw.githubusercontent.com/daynin/dotfiles/master/imgs/dotfiles3.png)
+Neovim installs vim-plug and all its plugins by itself the first time you
+open it.
 
-These are my tmux, vim, neovim, editorconfig and zsh configs.
+Re-running the script is safe. Any real file it would replace is moved to
+`<name>.backup` first, and everything already in place is left alone. Use
+`./install.sh --no-packages` to only link configs and skip package installs.
 
-### Tmux
+## What gets linked
 
-![](https://raw.githubusercontent.com/daynin/dotfiles/master/imgs/dotfiles2.png)
+| Repo file                | Symlinked to            |
+| ------------------------ | ----------------------- |
+| `configs/zshrc`          | `~/.zshrc`              |
+| `configs/tmux.conf`      | `~/.tmux.conf`          |
+| `configs/nvim-init.vim`  | `~/.config/nvim/init.vim` |
+| `configs/editorconfig`   | `~/.editorconfig`       |
+| `configs/words`          | `~/.words`              |
 
-1. Session name
-2. Inactive window
-3. Active window
-4. Active pane
-5. Simple date/time info panel
+## Machine-specific settings
 
-### Tmux hot keys
+Do not edit `configs/zshrc` for one machine. Put work aliases, tokens, proxies
+and anything else private in `~/.zshrc.local` — it is sourced last and is not
+tracked by this repo.
 
-There are only one thing you should know: you can use <kbd>Ctrl</kbd> + <kbd>h</kbd> / <kbd>j</kbd> / <kbd>k</kbd> / <kbd>l</kbd> to jump between panes
+## tmux
 
+Prefix is <kbd>Ctrl</kbd> + <kbd>a</kbd>.
 
-For spliting screen:
+| Action                    | Binding                                                     |
+| ------------------------- | ----------------------------------------------------------- |
+| Split vertically          | <kbd>Prefix</kbd> <kbd>\\</kbd>                             |
+| Split horizontally        | <kbd>Prefix</kbd> <kbd>-</kbd>                              |
+| Move between panes        | <kbd>Ctrl</kbd> + <kbd>h</kbd>/<kbd>j</kbd>/<kbd>k</kbd>/<kbd>l</kbd> |
+| Resize pane               | <kbd>Prefix</kbd> <kbd>H</kbd>/<kbd>J</kbd>/<kbd>K</kbd>/<kbd>L</kbd> |
+| Copy mode (vi keys)       | <kbd>Prefix</kbd> <kbd>Enter</kbd>, then <kbd>v</kbd> to select and <kbd>y</kbd> to copy |
+| Reload config             | <kbd>Prefix</kbd> <kbd>r</kbd>                              |
 
-1. `CTRL+A \` for splitting Vertical 
-2. `CTRL+A -` for splitting Horizontal
+<kbd>Ctrl</kbd> + <kbd>h/j/k/l</kbd> moves between tmux panes and vim splits
+alike. Copying with <kbd>y</kbd> goes to the system clipboard, using `pbcopy`
+on macOS and `wl-copy` or `xclip` on Linux — install one of those on Linux if
+you want clipboard integration.
 
-### Vim hot keys
+## Neovim
 
-First of all, you should know that my <kbd>Leader</kbd> key is <kbd>,</kbd>
+Leader key is <kbd>,</kbd>.
 
+| Action                                 | Binding                          |
+| -------------------------------------- | -------------------------------- |
+| Toggle file tree                       | <kbd>Ctrl</kbd> + <kbd>n</kbd>   |
+| Find files                             | <kbd>Ctrl</kbd> + <kbd>p</kbd>   |
+| Search file contents (ripgrep)         | <kbd>Ctrl</kbd> + <kbd>f</kbd>   |
+| Switch buffer                          | <kbd>Leader</kbd> <kbd>b</kbd>   |
+| Replace the word under the cursor      | <kbd>Leader</kbd> <kbd>s</kbd>   |
+| Clear search highlight                 | <kbd>Leader</kbd> <kbd>Space</kbd> |
+| Comment a line / selection             | `gcc` / `gc`                     |
 
-| Action        | Binding       | 
-| ------------- |:-------------:|
-| Toggle nerd tree | <kbd>Ctrl</kbd> + <kbd>n</kbd> |
-| Show Ctrl-p panel | <kbd>Ctrl</kbd> + <kbd>p</kbd> |
-| Switch buffer | <kbd>Ctrl</kbd> + <kbd>h</kbd> / <kbd>j</kbd> / <kbd>k</kbd> / <kbd>l</kbd> |
-| Format JS/HTML/CSS | <kbd>Ctrl</kbd> + <kbd>f</kbd> |
-| Find and replace word under the cursor | <kbd>Leader</kbd> + <kbd>s</kbd> |
+To update the plugins, run `:PlugUpdate`.
 
-That's all. Remaining keys are default.
+## Terminal font
 
-### Terminal emulator settings
+The status lines use Powerline glyphs, so pick a Nerd Font in your terminal
+emulator. Any of them works — for example:
 
-**NOTE:** You have to set "Droid Sans Mono for Powerline Nerd Font Complete.otf" as a font by default in your terminal emulator.
-'''
-cd ~/Library/Fonts && curl -fLo "Droid Sans Mono for Powerline Nerd Font Complete.otf" https://github.com/ryanoasis/nerd-fonts/raw/master/patched-fonts/DroidSansMono/complete/Droid%20Sans%20Mono%20Nerd%20Font%20Complete.otf
+```sh
+# macOS
+brew install --cask font-hack-nerd-font
 
-'''
-Like that:
-
-![](https://raw.githubusercontent.com/daynin/dotfiles/master/imgs/terminal-settings.png)
-
+# Linux
+mkdir -p ~/.local/share/fonts && cd ~/.local/share/fonts
+curl -fLO https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Hack.zip
+unzip -o Hack.zip && rm Hack.zip && fc-cache -f
+```
