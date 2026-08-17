@@ -400,9 +400,18 @@ fi
 # -----------------------------------------------------------------------------
 if live && is_macos; then
   hdr "Running processes"
-  for p in Hammerspoon AeroSpace karabiner_grabber espanso borders; do
+  for p in Hammerspoon AeroSpace espanso borders; do
     pgrep -qi "$p" && ok "$p running" || warn "$p not running"
   done
+  # Karabiner-Elements 16 dropped karabiner_grabber; the equivalent process is
+  # now Karabiner-Core-Service. Checking only the old name warned on every run
+  # against a healthy 16.x install. Accept either, so this stays honest if you
+  # ever roll back to 15.x.
+  if pgrep -qi 'Karabiner-Core-Service|karabiner_grabber'; then
+    ok "Karabiner core service running"
+  else
+    warn "Karabiner core service not running"
+  fi
 fi
 
 # -----------------------------------------------------------------------------
@@ -484,8 +493,13 @@ if command -v python3 >/dev/null 2>&1; then
 fi
 
 if live && is_macos && command -v goku >/dev/null 2>&1; then
-  goku --dry-run >/dev/null 2>&1 && ok "karabiner.edn compiles" \
-                                 || warn "karabiner.edn may not compile — run: goku"
+  # goku exits 1 whether it succeeded or not, so its exit status says nothing —
+  # testing it warned "may not compile" on every run even with a valid .edn.
+  # What actually distinguishes the two: on success goku writes the compiled
+  # profile to stdout and nothing to stderr; on failure stdout is empty and the
+  # error goes to stderr. So test stdout, not $?.
+  [ -n "$(goku --dry-run 2>/dev/null)" ] && ok "karabiner.edn compiles" \
+                                         || warn "karabiner.edn may not compile — run: goku"
 fi
 
 if live && command -v aerospace >/dev/null 2>&1; then
