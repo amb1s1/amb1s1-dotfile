@@ -325,13 +325,27 @@ fi
 
 # Does atuin actually record? The order above is necessary but not sufficient,
 # and a silent failure here means you lose history without noticing.
+#
+# Query the SQLite database directly rather than going through the atuin CLI.
+# Every atuin read subcommand (`history list`, `search`, `stats`) refuses to run
+# without $ATUIN_SESSION in the environment, which only an initialised
+# interactive shell sets — so from a script they all fail even when recording is
+# working perfectly. `history list --limit` does not exist at all as of 18.19.
 if command -v atuin >/dev/null 2>&1; then
-  if atuin history list --limit 1 >/dev/null 2>&1; then
-    last_rec="$(atuin history list --limit 1 2>/dev/null | wc -l | tr -d ' ')"
-    [[ "$last_rec" -gt 0 ]] && ok "atuin has recorded history" \
-                            || warn "atuin database is empty — is the hook loaded?"
+  atuin_db="${ATUIN_DB:-$HOME/.local/share/atuin/history.db}"
+  if [[ ! -f "$atuin_db" ]]; then
+    warn "no atuin database at $atuin_db — has a shell with the hook ever run?"
+  elif command -v sqlite3 >/dev/null 2>&1; then
+    rows="$(sqlite3 "$atuin_db" 'select count(*) from history;' 2>/dev/null || echo 0)"
+    if [[ "${rows:-0}" -gt 0 ]]; then
+      ok "atuin has recorded history ($rows commands)"
+    else
+      warn "atuin database is empty — is the hook loaded?"
+    fi
   else
-    warn "atuin history unreadable"
+    # No sqlite3: fall back to the file growing at all.
+    [[ -s "$atuin_db" ]] && ok "atuin database is non-empty (install sqlite3 for a row count)" \
+                         || warn "atuin database is empty — is the hook loaded?"
   fi
 fi
 

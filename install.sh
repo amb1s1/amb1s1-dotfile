@@ -30,14 +30,15 @@ as_root() {
 # Package names differ per manager, and not every tool is packaged everywhere.
 # Whatever is missing afterwards is picked up by install_missing_tools.
 # macOS gets a second layer on top of this — see ./Brewfile.
+# gawk is here for ble.sh, whose GNUmakefile refuses to build without GNU awk.
 BREW_PKGS=(git zsh bash tmux neovim curl fzf ripgrep bat eza fd git-delta zoxide
-           lazygit btop starship uv ruff node stylua shfmt atuin espanso)
+           lazygit btop starship uv ruff node stylua shfmt atuin espanso gawk)
 APT_PKGS=(git zsh bash tmux neovim curl fzf ripgrep bat fd-find git-delta zoxide
-          btop eza nodejs npm shfmt)
+          btop eza nodejs npm shfmt gawk)
 DNF_PKGS=(git zsh bash tmux neovim curl fzf ripgrep bat fd-find git-delta zoxide
-          btop eza nodejs npm lazygit shfmt)
+          btop eza nodejs npm lazygit shfmt gawk)
 PACMAN_PKGS=(git zsh bash tmux neovim curl fzf ripgrep bat fd git-delta zoxide
-             btop eza nodejs npm lazygit starship uv ruff shfmt atuin)
+             btop eza nodejs npm lazygit starship uv ruff shfmt atuin gawk)
 
 # ble.sh has no package anywhere and no useful git tag (newest tag: 2023;
 # master: committed weekly). Pin a commit so the install is reproducible.
@@ -172,7 +173,12 @@ install_blesh() {
     return 0
   fi
 
-  have git && have make || { warn "git and make are needed to build ble.sh; skipping"; return 0; }
+  # gawk is a real build dependency, not an optional nicety: ble.sh's GNUmakefile
+  # hard-fails with "Sorry, gawk could not be found" because it relies on GNU awk
+  # extensions that BSD awk (all macOS ships) does not implement.
+  for dep in git make gawk; do
+    have "$dep" || { warn "$dep is needed to build ble.sh; skipping"; return 0; }
+  done
 
   info "Installing ble.sh at pinned commit ${BLESH_COMMIT:0:12}"
 
@@ -432,10 +438,18 @@ macos_special_cases() {
   # Karabiner: karabiner.json is GENERATED, never linked. Karabiner replaces a
   # symlinked JSON with a real file, so goku compiles into place instead.
   if have goku; then
-    info "Compiling karabiner.edn -> karabiner.json via goku"
-    mkdir -p "$HOME/.config/karabiner"
-    goku >/dev/null 2>&1 || warn "goku failed — run it by hand to see why"
-    brew services start goku >/dev/null 2>&1 || true   # gokuw: recompile on save
+    # goku UPDATES an existing karabiner.json rather than creating one from
+    # scratch, and dies with a Java FileNotFoundException if it is absent.
+    # Karabiner-Elements writes that file the first time it launches, so the
+    # cask has to be installed and opened once before goku can do anything.
+    if [ -f "$HOME/.config/karabiner/karabiner.json" ]; then
+      info "Compiling karabiner.edn -> karabiner.json via goku"
+      goku >/dev/null 2>&1 || warn "goku failed — run 'goku' by hand to see why"
+      brew services start goku >/dev/null 2>&1 || true   # gokuw: recompile on save
+    else
+      warn "~/.config/karabiner/karabiner.json does not exist yet, so goku cannot run."
+      warn "  Install Karabiner-Elements and launch it once, then run: goku"
+    fi
   else
     warn "goku not installed; karabiner.edn will not be compiled"
   fi
