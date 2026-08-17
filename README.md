@@ -15,8 +15,9 @@ Linux**. Both read the same `starship.toml`, `gitconfig` and `tmux.conf`.
 ```sh
 git clone https://github.com/amb1s1/amb1s1-dotfile.git ~/.dotfiles
 cd ~/.dotfiles
+./install.sh --dry-run   # read the plan first; changes nothing
 ./install.sh
-./doctor.sh          # verify everything is wired up
+./doctor.sh              # verify everything is wired up
 ```
 
 That will:
@@ -36,11 +37,22 @@ That will:
 8. Set the default shell: Homebrew bash on macOS, zsh on Linux.
 
 Neovim installs its own plugins on first launch. Re-running the script is safe:
-real files it would replace are moved to `<name>.backup` first, and anything
-already in place is left alone. `./install.sh --no-packages` links configs only.
+any real file it would replace is moved into a timestamped `.backup-<stamp>/`
+directory first — one per run, so re-running can never overwrite an earlier
+backup — and anything already correctly linked is left alone.
+
+| Flag | Effect |
+| --- | --- |
+| `--dry-run` | Print every action, change nothing. CI asserts this is genuinely inert. |
+| `--no-packages` | Link configs only; skip package installs and the ble.sh build. |
+| `--no-blesh` | Skip building ble.sh from source. |
 
 `./doctor.sh` is read-only and asserts the things that break silently — see
-[Invariants](#invariants-that-break-silently).
+[Invariants](#invariants-that-break-silently). `./doctor.sh --static` runs only
+the checks that read this repo, skipping anything that touches `$HOME` or
+installed tools, so it needs neither a Mac nor a linked setup. That is what CI
+runs on every push: the invariants live in the script people actually use rather
+than in a workflow file that would drift from it.
 
 ## What you get
 
@@ -210,7 +222,17 @@ If a module grows past ~60 lines, ask whether a purpose-built tool should own it
 
 Each of these was found by testing, and each fails **without any error** — a
 reasonable-looking cleanup breaks them and nothing tells you. `doctor.sh`
-asserts every one; the rationale is commented at the point of use.
+asserts every one; the rationale is commented at the point of use. Eight of the
+ten are pure repo-content checks, so `doctor.sh --static` catches them in CI
+before a change is ever installed; the other two (#6 generated `karabiner.json`,
+and the live half of #5) need a real machine.
+
+Each assertion has been verified to actually fail when the invariant is broken —
+a check that cannot fail is worse than no check, because it reads as coverage.
+Invariant 8 is the cautionary example: the original render-and-check-stderr test
+passed on a genuinely broken config, because `git_branch` only evaluates inside a
+git repository and starship stays silent when a module never runs. It is now
+checked two ways, one of which needs neither starship nor a git repo.
 
 1. **PATH is set above the interactive guard in `bashrc`.** Below it, every
    non-interactive shell — `hs.execute()`, launchd, cron, git hooks — gets no
@@ -237,7 +259,9 @@ asserts every one; the rationale is commented at the point of use.
    valid TOML, binding never fires.
 8. **In `starship.toml`, literal parens must be escaped** (`[\(](240)`).
    Unescaped, starship reads `(` as a conditional group and the module silently
-   renders nothing. Only `starship prompt` reveals it, not TOML parsing.
+   renders nothing. TOML parsing will not reveal it, and neither will
+   `starship prompt` run outside a git repo — the module has to actually
+   evaluate before starship complains.
 9. **The brush flag check uses `ps -o command= -p $$`.** Do not simplify it to
    test `preexec_functions` — atuin populates that array whether or not the flag
    is present, so that check always passes.

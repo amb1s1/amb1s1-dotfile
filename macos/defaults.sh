@@ -3,16 +3,22 @@
 # macos/defaults.sh — the escape hatch for tools with no text config.
 #
 # Raycast, Homerow, CleanShot, BetterTouchTool and Ice all store settings in
-# macOS preference domains, not files you can sensibly hand-edit. You cannot
-# stow them. But you CAN snapshot and restore them, which gets you most of the
-# way to reproducibility.
+# macOS preference domains, not files you can sensibly hand-edit. But you CAN
+# snapshot and restore them, which gets you most of the way to reproducibility.
 #
-#   ./defaults.sh export     snapshot GUI app prefs into ./exported/  (COMMIT THESE)
+#   ./defaults.sh export     snapshot GUI app prefs into ./exported/  (NOT COMMITTED)
 #   ./defaults.sh import     restore those snapshots onto this machine
 #   ./defaults.sh system     apply the curated macOS system settings below
 #
-# Workflow: configure an app through its UI until you like it, run `export`,
-# commit the diff. That gives you a versioned record and a restore path.
+# IMPORTANT: exported/ is GITIGNORED and must stay that way. This repo is
+# public, and these dumps are personal application state — Raycast's alone is
+# ~100 KB of window positions, aliases and recent items, and a `defaults export`
+# carries whatever else the app happens to keep in its domain. The snapshots are
+# a LOCAL backup and restore path, not a tracked artefact.
+#
+# Workflow: configure an app through its UI until you like it, run `export`, and
+# keep the output somewhere private if you want it to survive a rebuild — an
+# encrypted volume, a password manager attachment, or a private repo.
 #
 set -euo pipefail
 
@@ -65,7 +71,12 @@ cmd_export() {
     fi
   done
   echo
-  say "Review and commit: git add macos/exported && git diff --cached"
+  say "Wrote $OUT"
+  # Deliberately NOT "git add": exported/ is gitignored because this repo is
+  # public and these are personal preference dumps. `git add` would refuse
+  # anyway, and -f would defeat the point.
+  warn "These are NOT tracked and will not be committed. Copy them somewhere"
+  warn "private if you want them to survive a rebuild."
 }
 
 cmd_import() {

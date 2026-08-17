@@ -1,0 +1,187 @@
+name: CI
+
+# This repo's whole premise is that a handful of things fail SILENTLY — a
+# keybinding that never fires, a prompt module that renders nothing, history that
+# stops recording. Those are exactly the failures a human does not notice, so
+# they are asserted here on every push.
+#
+# The invariants themselves live in ./doctor.sh --static, not in this file. A
+# workflow that re-implements them drifts from the script people actually run;
+# one that calls the script cannot.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: shellcheck + syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        run: |
+          # error+warning severity. Style nits are deliberately not a gate:
+          # a lint nobody can satisfy is a lint everybody learns to ignore.
+          shellcheck --severity=warning --shell=bash \
+            install.sh doctor.sh macos/defaults.sh
+
+      - name: bash -n
+        run: |
+          for f in install.sh doctor.sh macos/defaults.sh \
+                   configs/bashrc configs/bash_profile; do
+            bash -n "$f" && echo "ok  $f"
+          done
+
+      - name: zsh -n
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -yqq zsh
+          # configs/zshrc is still the Linux shell config, so it has to parse.
+          zsh -n configs/zshrc && echo "ok  configs/zshrc"
+
+  invariants:
+    name: doctor.sh --static
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install starship
+        # doctor.sh renders the prompt to catch malformed format strings, which
+        # only reports through starship itself. The pattern check runs without
+        # it, but both together are what closes the gap.
+        run: curl -fsSL https://starship.rs/install.sh | sh -s -- --yes --bin-dir /usr/local/bin
+
+      - name: Assert the invariants
+        # No Mac, no linked dotfiles, no installed desktop tooling required:
+        # --static reads the repo only.
+        run: ./doctor.sh --static
+
+  secrets:
+    name: gitleaks + denylist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # gitleaks scans history, not just the tip
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
+          GITLEAKS_ENABLE_SUMMARY: "false"
+
+      - name: Internal identifier denylist
+        # This repo is PUBLIC. The patterns are employer-specific and therefore
+        # secret themselves — writing an internal hostname into this file would
+        # be the very leak the check prevents — so they come from a repository
+        # secret, one extended-regex pattern per line.
+        #
+        # Set it with:
+        #   gh secret set DOTFILES_DENYLIST < ~/.config/dotfiles/denylist
+        #
+        # Without the secret this step is skipped rather than silently passing,
+        # so an absent denylist can never look like a clean result.
+        env:
+          DENYLIST_CONTENT: ${{ secrets.DOTFILES_DENYLIST }}
+        run: |
+          if [ -z "${DENYLIST_CONTENT:-}" ]; then
+            echo "::warning::DOTFILES_DENYLIST secret is not set — skipping the"\
+                 "internal-identifier check. Set it with:"\
+                 "gh secret set DOTFILES_DENYLIST < ~/.config/dotfiles/denylist"
+            exit 0
+          fi
+          printf '%s\n' "$DENYLIST_CONTENT" > /tmp/denylist
+          fail=0
+          while IFS= read -r pat; do
+            case "$pat" in ''|\#*) continue ;; esac
+            if git grep -qiE -- "$pat" 2>/dev/null; then
+              echo "::error::denylisted pattern '$pat' appears in a tracked file"
+              fail=1
+            fi
+          done < /tmp/denylist
+          [ "$fail" -eq 0 ] && echo "no denylisted identifiers in tracked files"
+          exit "$fail"
+
+      - name: Personal app state must not be tracked
+        run: |
+          # macos/exported/ holds `defaults export` dumps of GUI apps. They are
+          # gitignored on purpose; assert nobody has force-added them.
+          if git ls-files --error-unmatch macos/exported >/dev/null 2>&1; then
+            echo "::error::macos/exported/ is tracked — personal app prefs would be published"
+            exit 1
+          fi
+          if git ls-files --error-unmatch configs/leaderkey.json >/dev/null 2>&1; then
+            echo "::error::configs/leaderkey.json is tracked — it embeds absolute personal paths"
+            exit 1
+          fi
+          echo "no personal application state tracked"
+
+  config-validity:
+    name: config files parse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: TOML
+        run: |
+          # python3.11+ has tomllib in the stdlib, so no pip install needed.
+          for f in configs/aerospace.toml configs/starship.toml configs/atuin.toml; do
+            python3 -c "import tomllib,sys; tomllib.load(open(sys.argv[1],'rb'))" "$f" \
+              && echo "ok  $f"
+          done
+
+      - name: YAML
+        run: |
+          # pyyaml is NOT in the stdlib (unlike tomllib), so install it rather
+          # than assuming the runner image happens to ship it.
+          python3 -m pip install --quiet pyyaml
+          for f in configs/espanso/config/default.yml configs/espanso/match/*.yml; do
+            python3 -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))" "$f" \
+              && echo "ok  $f"
+          done
+
+      - name: Lua
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -yqq lua5.4
+          for f in configs/nvim-init.lua configs/hammerspoon/init.lua \
+                   configs/hammerspoon/modules/*.lua; do
+            luac5.4 -p "$f" 2>/dev/null || lua5.4 -e "assert(loadfile('$f'))"
+            echo "ok  $f"
+          done
+
+      - name: JSON
+        run: |
+          # Only tracked JSON; leaderkey.json is deliberately untracked.
+          found=$(git ls-files '*.json')
+          if [ -z "$found" ]; then echo "no tracked JSON"; exit 0; fi
+          for f in $found; do
+            python3 -m json.tool "$f" >/dev/null && echo "ok  $f"
+          done
+
+  install-dry-run:
+    name: install.sh --dry-run changes nothing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fingerprint, dry-run, compare
+        # The point of --dry-run is that it is inert. Prove it rather than
+        # trusting it: any state change here means the flag is lying.
+        run: |
+          fingerprint() {
+            find "$HOME" -maxdepth 2 -not -path '*/.git/*' 2>/dev/null | sort | sha256sum
+          }
+          before=$(fingerprint)
+          ./install.sh --dry-run
+          after=$(fingerprint)
+          if [ "$before" != "$after" ]; then
+            echo "::error::install.sh --dry-run modified the filesystem"
+            exit 1
+          fi
+          echo "--dry-run is inert"

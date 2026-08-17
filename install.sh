@@ -2,6 +2,7 @@
 # Install these dotfiles on macOS or Linux.
 #
 #   ./install.sh                everything
+#   ./install.sh --dry-run      print what would happen, change nothing
 #   ./install.sh --no-packages  link configs only
 #   ./install.sh --no-blesh     skip building ble.sh from source
 set -euo pipefail
@@ -10,10 +11,15 @@ DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 SKIP_PACKAGES=false
 SKIP_BLESH=false
+DRY_RUN=false
 for arg in "$@"; do
   case "$arg" in
+    --dry-run)     DRY_RUN=true ;;
     --no-packages) SKIP_PACKAGES=true ;;
     --no-blesh)    SKIP_BLESH=true ;;
+    -h | --help)
+      sed -n '2,6p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      exit 0 ;;
     *) echo "unknown argument: $arg" >&2; exit 2 ;;
   esac
 done
@@ -22,6 +28,30 @@ info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m==>\033[0m %s\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 is_macos() { [ "$(uname -s)" = "Darwin" ]; }
+
+# Every state-changing command goes through run(), so --dry-run is honoured in
+# one place rather than being re-checked at each call site. Arguments are passed
+# through as a single string to eval, so quote anything containing spaces.
+run() {
+  if $DRY_RUN; then
+    printf '    [dry-run] %s\n' "$*"
+  else
+    # eval is deliberate and required: callers pass shell fragments containing
+    # pipes, redirections and `|| true`, which a plain "$@" would treat as
+    # literal arguments. Everything passed in is constructed here, never from
+    # user input. Quote any path containing spaces at the call site.
+    # shellcheck disable=SC2294
+    eval "$@"
+  fi
+}
+
+# One backup directory per invocation, timestamped. The previous version wrote
+# "$dest.backup" for every file, which meant a second run could overwrite a
+# backup taken by the first — the case that matters is an app rewriting a real
+# file over a symlink (Karabiner does exactly this), where the clobbered backup
+# is the only copy of your original.
+BACKUP_DIR="$DOTFILES/.backup-$(date +%Y%m%d-%H%M%S)"
+BACKUP_USED=false
 
 as_root() {
   if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo "$@"; fi
@@ -50,6 +80,10 @@ BLESH_PREFIX="$HOME/.local"
 # Install the whole list at once, falling back to one at a time so a package
 # this distro happens not to carry does not sink the entire run.
 try_install() {
+  if $DRY_RUN; then
+    printf '    [dry-run] %s %s\n' "$*" "${PKGS[*]}"
+    return 0
+  fi
   if ! "$@" "${PKGS[@]}" >/dev/null 2>&1; then
     local pkg
     for pkg in "${PKGS[@]}"; do
@@ -61,8 +95,12 @@ try_install() {
 install_packages() {
   if is_macos && ! have brew; then
     info "Installing Homebrew"
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"
+    if $DRY_RUN; then
+      printf '    [dry-run] install Homebrew from https://brew.sh\n'
+    else
+      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"
+    fi
   fi
 
   if have brew; then
@@ -70,7 +108,7 @@ install_packages() {
     PKGS=("${BREW_PKGS[@]}"); try_install brew install
   elif have apt-get; then
     info "Installing packages with apt"
-    as_root apt-get update >/dev/null
+    run "as_root apt-get update >/dev/null"
     PKGS=("${APT_PKGS[@]}"); try_install as_root apt-get install -y
   elif have dnf; then
     info "Installing packages with dnf"
@@ -90,29 +128,33 @@ install_macos_extras() {
   have brew || { warn "Homebrew missing; skipping ./Brewfile"; return 0; }
   info "Installing macOS extras from ./Brewfile"
   # --no-upgrade so it never upgrades things behind your back.
-  brew bundle install --file="$DOTFILES/Brewfile" --no-upgrade || \
+  #
+  # NOTE: the casks here (karabiner-elements, espanso, leader-key) need a sudo
+  # password — Karabiner installs a driver extension — so this step is
+  # interactive and cannot run unattended.
+  run "brew bundle install --file='$DOTFILES/Brewfile' --no-upgrade" || \
     warn "Some Brewfile entries failed; run 'brew bundle check --file=$DOTFILES/Brewfile --verbose'"
 }
 
 # Starship, uv and ruff are not in most distro repos. Install them from
 # upstream into ~/.local so nothing here needs root.
 install_missing_tools() {
-  mkdir -p "$HOME/.local/bin"
+  run "mkdir -p '$HOME/.local/bin'"
   export PATH="$HOME/.local/bin:$PATH"
 
   if ! have starship; then
     info "Installing starship"
-    curl -fsSL https://starship.rs/install.sh | sh -s -- --yes --bin-dir "$HOME/.local/bin"
+    run "curl -fsSL https://starship.rs/install.sh | sh -s -- --yes --bin-dir '$HOME/.local/bin'"
   fi
 
   if ! have uv; then
     info "Installing uv"
-    curl -fsSL https://astral.sh/uv/install.sh | sh
+    run "curl -fsSL https://astral.sh/uv/install.sh | sh"
   fi
 
   if ! have ruff && have uv; then
     info "Installing ruff"
-    uv tool install ruff
+    run "uv tool install ruff"
   fi
 
   have delta || warn "delta is not packaged here — git will fall back to less"
@@ -148,10 +190,9 @@ ensure_current_neovim() {
   esac
 
   info "Packaged neovim is too old; installing the current release to ~/.local/nvim"
-  mkdir -p "$HOME/.local/nvim" "$HOME/.local/bin"
-  curl -fsSL "https://github.com/neovim/neovim/releases/download/stable/nvim-linux-$arch.tar.gz" \
-    | tar -xz -C "$HOME/.local/nvim" --strip-components=1
-  ln -sfn "$HOME/.local/nvim/bin/nvim" "$HOME/.local/bin/nvim"
+  run "mkdir -p '$HOME/.local/nvim' '$HOME/.local/bin'"
+  run "curl -fsSL 'https://github.com/neovim/neovim/releases/download/stable/nvim-linux-$arch.tar.gz' | tar -xz -C '$HOME/.local/nvim' --strip-components=1"
+  run "ln -sfn '$HOME/.local/nvim/bin/nvim' '$HOME/.local/bin/nvim'"
 }
 
 # ble.sh — the fish-like interactive layer for bash. On macOS brush is the
@@ -183,17 +224,17 @@ install_blesh() {
   info "Installing ble.sh at pinned commit ${BLESH_COMMIT:0:12}"
 
   # A shallow clone cannot check out an arbitrary SHA, so fetch that one object.
-  mkdir -p "$(dirname "$src")"
+  run "mkdir -p '$(dirname "$src")'"
   if [ ! -d "$src/.git" ]; then
-    git clone --filter=blob:none --no-checkout \
-      https://github.com/akinomyoga/ble.sh.git "$src"
+    run "git clone --filter=blob:none --no-checkout https://github.com/akinomyoga/ble.sh.git '$src'"
   fi
-  git -C "$src" fetch --depth 1 origin "$BLESH_COMMIT"
-  git -C "$src" checkout --detach "$BLESH_COMMIT"
-  git -C "$src" submodule update --init --recursive --depth 1
+  run "git -C '$src' fetch --depth 1 origin '$BLESH_COMMIT'"
+  run "git -C '$src' checkout --detach '$BLESH_COMMIT'"
+  run "git -C '$src' submodule update --init --recursive --depth 1"
 
-  make -C "$src" install PREFIX="$BLESH_PREFIX" || { warn "ble.sh build failed"; return 0; }
+  run "make -C '$src' install PREFIX='$BLESH_PREFIX'" || { warn "ble.sh build failed"; return 0; }
 
+  $DRY_RUN && return 0
   [ -r "$target" ] || warn "ble.sh install did not produce $target"
 }
 
@@ -202,7 +243,7 @@ clone_once() {
   local repo="$1" dest="$2"
   if [ ! -d "$dest" ]; then
     info "Installing $(basename "$dest")"
-    git clone --depth 1 "https://github.com/$repo.git" "$dest"
+    run "git clone --depth 1 'https://github.com/$repo.git' '$dest'"
   fi
 }
 
@@ -237,6 +278,19 @@ refuse_on_tracked_secret() {
 # non-secret machine/work-specific settings (aliases, PATH additions).
 scaffold_local_files() {
   local dir="$HOME/.config/bash"
+
+  # These are heredoc-written templates rather than single commands, so rather
+  # than routing each through run(), report and return early under --dry-run.
+  if $DRY_RUN; then
+    printf '    [dry-run] scaffold, if absent: %s\n' \
+      "$dir/secrets.sh (mode 600)" \
+      "$dir/local.sh" \
+      "$HOME/.config/espanso/match/local.yml" \
+      "$HOME/.config/dotfiles/denylist"
+    $DRY_RUN && is_macos && printf '    [dry-run] scaffold, if absent: %s\n' "$HOME/.hammerspoon/local.lua"
+    return 0
+  fi
+
   mkdir -p "$dir"
 
   if [ ! -f "$dir/secrets.sh" ]; then
@@ -325,6 +379,10 @@ install_gitleaks_hook() {
   have gitleaks || { warn "gitleaks not installed — no pre-commit secret scan"; return 0; }
   [ -d "$DOTFILES/.git" ] || return 0
   info "Installing gitleaks pre-commit hook"
+  if $DRY_RUN; then
+    printf '    [dry-run] write %s\n' "$DOTFILES/.git/hooks/pre-commit"
+    return 0
+  fi
   mkdir -p "$DOTFILES/.git/hooks"
   cat > "$DOTFILES/.git/hooks/pre-commit" <<'EOF'
 #!/usr/bin/env bash
@@ -348,6 +406,10 @@ save_git_identity() {
   email="$(git config --global --get user.email 2>/dev/null || true)"
   if [ -n "$name" ] || [ -n "$email" ]; then
     info "Copying your git identity into ~/.gitconfig.local"
+    if $DRY_RUN; then
+      printf '    [dry-run] write %s with the current user.name/user.email\n' "$target"
+      return 0
+    fi
     printf '[user]\n' > "$target"
     [ -n "$name" ] && printf '\tname = %s\n' "$name" >> "$target"
     [ -n "$email" ] && printf '\temail = %s\n' "$email" >> "$target"
@@ -355,15 +417,30 @@ save_git_identity() {
   return 0
 }
 
+# Move a real file out of the way into this run's backup directory, preserving
+# its path underneath so two files with the same basename cannot collide.
+backup_real_file() {
+  local dest="$1" rel="$2"
+  [ -e "$dest" ] || return 0
+  [ -L "$dest" ] && return 0        # an existing symlink is fine to replace
+  BACKUP_USED=true
+  run "mkdir -p '$BACKUP_DIR/$(dirname "$rel")'"
+  run "mv '$dest' '$BACKUP_DIR/$rel'"
+  $DRY_RUN || info "Backed up ~/$rel -> ${BACKUP_DIR##*/}/$rel"
+}
+
 link() {
   local src="$DOTFILES/$1" dest="$HOME/$2"
-  mkdir -p "$(dirname "$dest")"
-  if [ -e "$dest" ] && [ ! -L "$dest" ]; then
-    mv "$dest" "$dest.backup"
-    info "Backed up existing $dest to $dest.backup"
+  if [ ! -e "$src" ]; then
+    warn "missing in repo, not linking: $1"
+    return 0
   fi
-  ln -sfn "$src" "$dest"
-  info "Linked ~/$2"
+  run "mkdir -p '$(dirname "$dest")'"
+  backup_real_file "$dest" "$2"
+  run "ln -sfn '$src' '$dest'"
+  # Only claim it under a real run; run() has already printed the ln command in
+  # dry-run mode, and "Linked ~/X" would be a plain untruth there.
+  $DRY_RUN || info "Linked ~/$2"
 }
 
 link_configs() {
@@ -408,13 +485,15 @@ link_macos_configs() {
   # local copy at configs/leaderkey.json (gitignored).
   if [ -f "$DOTFILES/configs/leaderkey.json" ]; then
     local lk="$HOME/Library/Application Support/Leader Key"
-    mkdir -p "$lk"
+    run "mkdir -p '$lk'"
     if [ -e "$lk/config.json" ] && [ ! -L "$lk/config.json" ]; then
-      mv "$lk/config.json" "$lk/config.json.backup"
-      info "Backed up existing Leader Key config.json"
+      BACKUP_USED=true
+      run "mkdir -p '$BACKUP_DIR/leaderkey'"
+      run "mv '$lk/config.json' '$BACKUP_DIR/leaderkey/config.json'"
+      info "Backed up Leader Key config.json -> ${BACKUP_DIR##*/}/leaderkey/"
     fi
-    ln -sfn "$DOTFILES/configs/leaderkey.json" "$lk/config.json"
-    info "Linked Leader Key config.json"
+    run "ln -sfn '$DOTFILES/configs/leaderkey.json' '$lk/config.json'"
+    $DRY_RUN || info "Linked Leader Key config.json"
   fi
 }
 
@@ -428,11 +507,13 @@ macos_special_cases() {
     local esp_default="$HOME/Library/Application Support/espanso"
     if [ -d "$esp_default" ] && [ ! -L "$esp_default" ]; then
       info "Moving espanso's Application Support config aside so ~/.config/espanso wins"
-      espanso stop >/dev/null 2>&1 || true
-      mv "$esp_default" "$esp_default.backup"
+      run "espanso stop >/dev/null 2>&1 || true"
+      BACKUP_USED=true
+      run "mkdir -p '$BACKUP_DIR'"
+      run "mv '$esp_default' '$BACKUP_DIR/espanso-appsupport'"
     fi
-    espanso service register >/dev/null 2>&1 || true
-    espanso start >/dev/null 2>&1 || true
+    run "espanso service register >/dev/null 2>&1 || true"
+    run "espanso start >/dev/null 2>&1 || true"
   fi
 
   # Karabiner: karabiner.json is GENERATED, never linked. Karabiner replaces a
@@ -444,10 +525,10 @@ macos_special_cases() {
     # cask has to be installed and opened once before goku can do anything.
     if [ -f "$HOME/.config/karabiner/karabiner.json" ]; then
       info "Compiling karabiner.edn -> karabiner.json via goku"
-      goku >/dev/null 2>&1 || warn "goku failed — run 'goku' by hand to see why"
-      brew services start goku >/dev/null 2>&1 || true   # gokuw: recompile on save
+      run "goku >/dev/null 2>&1" || warn "goku failed — run 'goku' by hand to see why"
+      run "brew services start goku >/dev/null 2>&1 || true"   # gokuw: recompile on save
     else
-      warn "~/.config/karabiner/karabiner.json does not exist yet, so goku cannot run."
+      warn "$HOME/.config/karabiner/karabiner.json does not exist yet, so goku cannot run."
       warn "  Install Karabiner-Elements and launch it once, then run: goku"
     fi
   else
@@ -455,13 +536,13 @@ macos_special_cases() {
   fi
 
   if have aerospace; then
-    aerospace reload-config >/dev/null 2>&1 || true
+    run "aerospace reload-config >/dev/null 2>&1 || true"
   fi
 
   # init.lua installs an hs.pathwatcher on ~/.hammerspoon/, so linking already
   # triggered a reload. Start Hammerspoon if it was not running.
   if ! pgrep -qx Hammerspoon && [ -d /Applications/Hammerspoon.app ]; then
-    open -g -a Hammerspoon >/dev/null 2>&1 || true
+    run "open -g -a Hammerspoon >/dev/null 2>&1 || true"
   fi
 }
 
@@ -503,14 +584,19 @@ set_default_shell() {
       warn "Everything else is in place — try it here first: exec $target --login"
       return 0
     fi
-    as_root sh -c "echo '$target' >> /etc/shells"
+    run "as_root sh -c \"echo '$target' >> /etc/shells\""
   fi
 
   info "Setting $target as the default shell"
-  chsh -s "$target" || warn "Could not change the shell; run it yourself: chsh -s $target"
+  run "chsh -s '$target'" || warn "Could not change the shell; run it yourself: chsh -s $target"
 }
 
 main() {
+  if $DRY_RUN; then
+    warn "DRY RUN — nothing below is executed."
+    echo
+  fi
+
   if ! $SKIP_PACKAGES; then
     install_packages
     install_macos_extras
@@ -528,9 +614,21 @@ main() {
   macos_special_cases
   set_default_shell
 
+  if $DRY_RUN; then
+    echo
+    info "Dry run complete. Nothing was changed."
+    echo "  Re-run without --dry-run to apply."
+    return 0
+  fi
+
   info "Done. Open a new terminal; neovim installs its plugins on first launch."
   echo
   echo "  Verify with: ./doctor.sh"
+  # An `if` rather than `$BACKUP_USED && echo`, so the exit status of main() does
+  # not become 1 just because nothing needed backing up.
+  if $BACKUP_USED; then
+    echo "  Backups of replaced real files: $BACKUP_DIR"
+  fi
   if is_macos; then
     echo
     echo "  Two shells, one ~/.bashrc:"

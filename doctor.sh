@@ -8,7 +8,29 @@
 # that crept back into a tracked file, and the shell integration order that
 # stops atuin recording history without any error at all.
 #
+#   ./doctor.sh            everything: repo contents AND this machine's state
+#   ./doctor.sh --static   only checks that read the repo, never $HOME or
+#                          installed tools. This is what CI runs — it needs no
+#                          Mac, no installed tooling and no linked dotfiles, so
+#                          the invariants live here once instead of being
+#                          duplicated into a workflow file that drifts.
+#
+# Display strings below use a literal "~/" as a readable label; they are never
+# used as paths (real path handling always goes through "$HOME"), so SC2088 is
+# not a defect here.
+# shellcheck disable=SC2088
 set -uo pipefail
+
+STATIC=false
+case "${1:-}" in
+  --static) STATIC=true ;;
+  "") ;;
+  -h | --help) sed -n '3,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  *) echo "unknown argument: $1" >&2; exit 2 ;;
+esac
+
+# True when checks that touch live machine state should run.
+live() { ! $STATIC; }
 
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PASS=0; FAIL=0; WARN=0
@@ -21,6 +43,11 @@ is_macos() { [[ "$(uname -s)" == "Darwin" ]]; }
 
 BASHRC="$DOTFILES/configs/bashrc"
 SHIP="$DOTFILES/configs/starship.toml"
+
+# =============================================================================
+# LIVE CHECKS — this machine's state. Skipped by --static.
+# =============================================================================
+if live; then
 
 # -----------------------------------------------------------------------------
 hdr "Symlinks (config in repo == config in use)"
@@ -98,16 +125,20 @@ if is_macos; then
   fi
 fi
 
+fi   # end live-only block (symlinks / machine-specific / generated artefacts)
+
 # -----------------------------------------------------------------------------
 hdr "Secrets"
 
-if [[ -f "$HOME/.config/bash/secrets.sh" ]]; then
-  if is_macos; then perms="$(stat -f '%Lp' "$HOME/.config/bash/secrets.sh")"
-  else perms="$(stat -c '%a' "$HOME/.config/bash/secrets.sh")"; fi
-  [[ "$perms" == "600" ]] && ok "secrets.sh present, mode 600" \
-                          || bad "secrets.sh is mode $perms — should be 600"
-else
-  warn "no ~/.config/bash/secrets.sh (fine if you use 1Password CLI instead)"
+if live; then
+  if [[ -f "$HOME/.config/bash/secrets.sh" ]]; then
+    if is_macos; then perms="$(stat -f '%Lp' "$HOME/.config/bash/secrets.sh")"
+    else perms="$(stat -c '%a' "$HOME/.config/bash/secrets.sh")"; fi
+    [[ "$perms" == "600" ]] && ok "secrets.sh present, mode 600" \
+                            || bad "secrets.sh is mode $perms — should be 600"
+  else
+    warn "no ~/.config/bash/secrets.sh (fine if you use 1Password CLI instead)"
+  fi
 fi
 
 # .bashrc must actually source it, or the whole convention is decorative.
@@ -131,7 +162,8 @@ fi
 # The patterns themselves are employer-specific, so they are NOT hardcoded here
 # — an internal hostname written into this check would be exactly the leak the
 # check exists to prevent. One extended-regex pattern per line in:
-DENYLIST="$HOME/.config/dotfiles/denylist"
+# Overridable so CI can supply the list from a secret rather than from $HOME.
+DENYLIST="${DOTFILES_DENYLIST:-$HOME/.config/dotfiles/denylist}"
 if [[ ! -d "$DOTFILES/.git" ]]; then
   :
 elif [[ ! -r "$DENYLIST" ]]; then
@@ -156,13 +188,18 @@ else
   ok "macos/exported/ is not tracked"
 fi
 
-if [[ -x "$DOTFILES/.git/hooks/pre-commit" ]]; then
-  ok "gitleaks pre-commit hook installed"
-else
-  warn "no pre-commit hook — a secret could be committed by accident"
+# The hook is per-clone (.git/hooks is not tracked), so a fresh clone in CI has
+# none by definition — checking for it there would be noise.
+if live; then
+  if [[ -x "$DOTFILES/.git/hooks/pre-commit" ]]; then
+    ok "gitleaks pre-commit hook installed"
+  else
+    warn "no pre-commit hook — a secret could be committed by accident"
+  fi
 fi
 
 # -----------------------------------------------------------------------------
+if live; then
 hdr "Tools on PATH"
 
 for t in git starship atuin fzf rg bat eza fd zoxide delta; do
@@ -175,6 +212,7 @@ if is_macos; then
   done
   [[ -d /Applications/Hammerspoon.app ]] && ok "Hammerspoon.app" \
                                          || warn "Hammerspoon.app missing"
+fi
 fi
 
 # -----------------------------------------------------------------------------
@@ -244,83 +282,93 @@ if [[ -r "$DOTFILES/configs/bash_profile" ]]; then
     || bad ".bash_profile does not source .bashrc — nothing will load on macOS"
 fi
 
-BASH_BIN="$(command -v bash)"
-if is_macos; then
-  BREW_BASH="$(brew --prefix 2>/dev/null || echo /opt/homebrew)/bin/bash"
-  if [[ -x "$BREW_BASH" ]]; then
-    BASH_BIN="$BREW_BASH"
-    bver="$("$BREW_BASH" -c 'echo ${BASH_VERSINFO[0]}')"
-    (( bver >= 4 )) && ok "Homebrew bash $("$BREW_BASH" -c 'echo $BASH_VERSION')" \
-                    || bad "Homebrew bash is v$bver — ble.sh needs 4.0+"
+# --- Ghostty's brush flags: a REPO-CONTENT check, so it runs under --static ---
+#
+# This is the single most important assertion in the file and it does not need
+# brush, a Mac, or anything installed — it reads configs/ghostty. The two flags
+# MUST be on Ghostty's command line, because chsh cannot pass arguments, which is
+# the whole reason brush is launched from Ghostty. --enable-zsh-hooks is the
+# dangerous one: without it brush registers atuin's preexec_functions but never
+# invokes them, so history recording fails with no error at all.
+gcfg="$DOTFILES/configs/ghostty"
+if [[ -r "$gcfg" ]]; then
+  cmdline="$(grep -E '^\s*command\s*=' "$gcfg" | head -1)"
+  if [[ "$cmdline" == *brush* ]]; then
+    [[ "$cmdline" == *--enable-zsh-hooks* ]] \
+      && ok "Ghostty passes --enable-zsh-hooks (atuin will record)" \
+      || bad "Ghostty launches brush WITHOUT --enable-zsh-hooks — atuin will silently stop recording"
+    [[ "$cmdline" == *--enable-highlighting* ]] \
+      && ok "Ghostty passes --enable-highlighting" \
+      || warn "no --enable-highlighting — brush will run unhighlighted"
   else
-    bad "no $BREW_BASH — system /bin/bash 3.2 is too old for ble.sh"
+    warn "Ghostty is not launching brush (currently: ${cmdline:-unset})"
   fi
 fi
 
-if [[ -r "$HOME/.local/share/blesh/ble.sh" ]]; then
-  ok "ble.sh installed (bash line editor)"
+# The repo must not ship a brush config.toml either: the schema is undocumented
+# and unknown keys are silently accepted, so a plausible-looking config is an
+# invisible no-op. .brushrc (documented) is used instead.
+if [[ -e "$DOTFILES/configs/brush-config.toml" ]]; then
+  bad "the repo ships a brush config.toml — undocumented schema, silently ignores unknown keys"
 else
-  warn "ble.sh missing — bash has no autosuggestions (brush unaffected)"
+  ok "repo ships no brush config.toml (deliberate)"
 fi
 
-# --- brush: the interactive shell on macOS ----------------------------------
-if is_macos; then
-  if command -v brush >/dev/null 2>&1; then
-    ok "brush $(brush --version 2>/dev/null | awk '{print $2}')"
+BASH_BIN="$(command -v bash)"
 
-    # The two flags MUST be on Ghostty's command line — chsh cannot pass
-    # arguments, which is the whole reason brush is launched from Ghostty.
-    # --enable-zsh-hooks is the dangerous one: without it brush registers
-    # atuin's preexec_functions but never invokes them, so history recording
-    # fails with no error at all.
-    gcfg="$DOTFILES/configs/ghostty"
-    if [[ -r "$gcfg" ]]; then
-      cmdline="$(grep -E '^\s*command\s*=' "$gcfg" | head -1)"
-      if [[ "$cmdline" == *brush* ]]; then
-        [[ "$cmdline" == *--enable-zsh-hooks* ]] \
-          && ok "Ghostty passes --enable-zsh-hooks (atuin will record)" \
-          || bad "Ghostty launches brush WITHOUT --enable-zsh-hooks — atuin will silently stop recording"
-        [[ "$cmdline" == *--enable-highlighting* ]] \
-          && ok "Ghostty passes --enable-highlighting" \
-          || warn "no --enable-highlighting — brush will run unhighlighted"
-      else
-        warn "Ghostty is not launching brush (currently: ${cmdline:-unset})"
-      fi
+if live; then
+  if is_macos; then
+    BREW_BASH="$(brew --prefix 2>/dev/null || echo /opt/homebrew)/bin/bash"
+    if [[ -x "$BREW_BASH" ]]; then
+      BASH_BIN="$BREW_BASH"
+      bver="$("$BREW_BASH" -c 'echo ${BASH_VERSINFO[0]}')"
+      (( bver >= 4 )) && ok "Homebrew bash $("$BREW_BASH" -c 'echo $BASH_VERSION')" \
+                      || bad "Homebrew bash is v$bver — ble.sh needs 4.0+"
+    else
+      bad "no $BREW_BASH — system /bin/bash 3.2 is too old for ble.sh"
+    fi
+  fi
+
+  if [[ -r "$HOME/.local/share/blesh/ble.sh" ]]; then
+    ok "ble.sh installed (bash line editor)"
+  else
+    warn "ble.sh missing — bash has no autosuggestions (brush unaffected)"
+  fi
+
+  if is_macos; then
+    if command -v brush >/dev/null 2>&1; then
+      ok "brush $(brush --version 2>/dev/null | awk '{print $2}')"
+      # brush must be able to read the shared .bashrc.
+      brush -n "$BASHRC" >/dev/null 2>&1 \
+        && ok "brush parses the shared .bashrc" \
+        || bad "brush cannot parse .bashrc"
+    else
+      warn "brush not installed — the Ghostty config expects it"
     fi
 
-    # brush must be able to read the shared .bashrc.
-    brush -n "$BASHRC" >/dev/null 2>&1 \
-      && ok "brush parses the shared .bashrc" \
-      || bad "brush cannot parse .bashrc"
-
-    # brush's config.toml schema is undocumented and unknown keys are silently
-    # accepted, so a plausible-looking config is an invisible no-op. .brushrc
-    # (documented) is used instead.
     [[ -e "$HOME/.config/brush/config.toml" ]] \
       && bad "~/.config/brush/config.toml exists — undocumented schema, silently ignores unknown keys" \
       || ok "no ~/.config/brush/config.toml (deliberate)"
-  else
-    warn "brush not installed — the Ghostty config expects it"
+
+    # brush must never be the login shell: chsh cannot pass its required flags.
+    login_shell="$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')"
+    case "$login_shell" in
+      *brush*) bad "login shell is brush — chsh cannot pass --enable-zsh-hooks; use bash" ;;
+      "$BASH_BIN") ok "login shell is $BASH_BIN" ;;
+      *) warn "login shell is $login_shell (not yet switched — see install.sh output)" ;;
+    esac
+
+    grep -qxF "$BASH_BIN" /etc/shells 2>/dev/null && ok "$BASH_BIN is in /etc/shells" \
+      || warn "$BASH_BIN not in /etc/shells — chsh will refuse until added (sudo)"
+
+    # OSH cannot work on macOS (no FNM_EXTMATCH in BSD libc); flag it if lingering.
+    command -v osh >/dev/null 2>&1 && \
+      warn "oils-for-unix still installed — unusable on macOS; brew uninstall oils-for-unix"
+
+    # fish is the documented rollback path. Do not remove it.
+    command -v fish >/dev/null 2>&1 && ok "fish still installed (rollback path)" \
+      || warn "fish is gone — the documented rollback path no longer exists"
   fi
-
-  # brush must never be the login shell: chsh cannot pass its required flags.
-  login_shell="$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')"
-  case "$login_shell" in
-    *brush*) bad "login shell is brush — chsh cannot pass --enable-zsh-hooks; use bash" ;;
-    "$BASH_BIN") ok "login shell is $BASH_BIN" ;;
-    *) warn "login shell is $login_shell (not yet switched — see install.sh output)" ;;
-  esac
-
-  grep -qxF "$BASH_BIN" /etc/shells 2>/dev/null && ok "$BASH_BIN is in /etc/shells" \
-    || warn "$BASH_BIN not in /etc/shells — chsh will refuse until added (sudo)"
-
-  # OSH cannot work on macOS (no FNM_EXTMATCH in BSD libc); flag it if lingering.
-  command -v osh >/dev/null 2>&1 && \
-    warn "oils-for-unix still installed — unusable on macOS; brew uninstall oils-for-unix"
-
-  # fish is the documented rollback path. Do not remove it.
-  command -v fish >/dev/null 2>&1 && ok "fish still installed (rollback path)" \
-    || warn "fish is gone — the documented rollback path no longer exists"
 fi
 
 # Does atuin actually record? The order above is necessary but not sufficient,
@@ -331,7 +379,7 @@ fi
 # without $ATUIN_SESSION in the environment, which only an initialised
 # interactive shell sets — so from a script they all fail even when recording is
 # working perfectly. `history list --limit` does not exist at all as of 18.19.
-if command -v atuin >/dev/null 2>&1; then
+if live && command -v atuin >/dev/null 2>&1; then
   atuin_db="${ATUIN_DB:-$HOME/.local/share/atuin/history.db}"
   if [[ ! -f "$atuin_db" ]]; then
     warn "no atuin database at $atuin_db — has a shell with the hook ever run?"
@@ -350,7 +398,7 @@ if command -v atuin >/dev/null 2>&1; then
 fi
 
 # -----------------------------------------------------------------------------
-if is_macos; then
+if live && is_macos; then
   hdr "Running processes"
   for p in Hammerspoon AeroSpace karabiner_grabber espanso borders; do
     pgrep -qi "$p" && ok "$p running" || warn "$p not running"
@@ -373,19 +421,42 @@ if command -v zsh >/dev/null 2>&1; then
     && ok "zshrc parses" || bad "zshrc has a syntax error"
 fi
 
+# Literal parens in a starship format string MUST be backslash-escaped: `(` opens
+# a conditional group, so unescaped the module renders nothing at all while the
+# TOML stays valid.
+#
+# Two checks, because each catches what the other misses.
+#
+# (a) A direct pattern check. Works with or without starship installed, which
+#     matters in CI, and cannot pass vacuously. `[\(]` is correct; a bare `[(]`
+#     or `[)]` as a whole style-group body is the bug.
+if grep -nE '^[[:space:]]*format[[:space:]]*=.*\[[()]\]' "$SHIP" >/dev/null 2>&1; then
+  bad "starship.toml has an UNESCAPED literal paren in a format string — the module will render nothing:"
+  grep -nE '^[[:space:]]*format[[:space:]]*=.*\[[()]\]' "$SHIP" | sed 's/^/      /'
+else
+  ok "starship.toml literal parens are escaped"
+fi
+
+# (b) Render it and read stderr, which catches malformed formats generally.
+#
+#     --path matters: starship only evaluates a module when its trigger
+#     condition holds, so git_branch is skipped entirely outside a git
+#     repository. Rendering from an arbitrary cwd therefore passes vacuously —
+#     the exact reason an earlier version of this check missed a real unescaped
+#     paren. Point it at $DOTFILES, which is a git repo, so the git modules run.
 if command -v starship >/dev/null 2>&1; then
-  # starship keeps invalid format strings as valid TOML and only complains at
-  # render time, so parsing the file is not enough — render it and check stderr.
-  # Literal parens in a format string must be backslash-escaped: unescaped, the
-  # module silently renders nothing.
-  if STARSHIP_CONFIG="$SHIP" starship prompt 2>&1 >/dev/null | grep -qi 'warn\|error'; then
-    bad "starship.toml has a module error — run: STARSHIP_CONFIG=$SHIP starship prompt >/dev/null"
+  if STARSHIP_CONFIG="$SHIP" starship prompt --path "$DOTFILES" 2>&1 >/dev/null \
+       | grep -qiE 'warn|error'; then
+    bad "starship.toml has a module error — run: STARSHIP_CONFIG=$SHIP starship prompt --path $DOTFILES >/dev/null"
   else
     ok "starship.toml renders without warnings"
   fi
 fi
 
-if command -v python3 >/dev/null 2>&1 && is_macos; then
+# NOT gated on macOS: aerospace.toml is repo content, and validating it does not
+# require AeroSpace to be installed. This is exactly the kind of check that is
+# worth running in CI on Linux.
+if command -v python3 >/dev/null 2>&1; then
   python3 -c "import tomllib,sys; tomllib.load(open(sys.argv[1],'rb'))" \
     "$DOTFILES/configs/aerospace.toml" 2>/dev/null \
     && ok "aerospace.toml is valid TOML" || bad "aerospace.toml is not valid TOML"
@@ -412,17 +483,18 @@ if command -v python3 >/dev/null 2>&1 && is_macos; then
   fi
 fi
 
-if is_macos && command -v goku >/dev/null 2>&1; then
+if live && is_macos && command -v goku >/dev/null 2>&1; then
   goku --dry-run >/dev/null 2>&1 && ok "karabiner.edn compiles" \
                                  || warn "karabiner.edn may not compile — run: goku"
 fi
 
-if command -v aerospace >/dev/null 2>&1; then
+if live && command -v aerospace >/dev/null 2>&1; then
   aerospace list-workspaces --all >/dev/null 2>&1 \
     && ok "aerospace responding" || warn "aerospace not responding"
 fi
 
 # -----------------------------------------------------------------------------
+if live; then
 hdr "Drift"
 
 if is_macos && command -v brew >/dev/null 2>&1; then
@@ -446,6 +518,11 @@ if [[ -d "$DOTFILES/.git" ]]; then
   fi
 fi
 
+fi   # end live-only Drift section
+
 # -----------------------------------------------------------------------------
-printf '\n\033[1m%d passed, %d warnings, %d failures\033[0m\n' "$PASS" "$WARN" "$FAIL"
+if $STATIC; then
+  printf '\n\033[2m(--static: skipped every check that reads $HOME or installed tools)\033[0m\n'
+fi
+printf '\033[1m%d passed, %d warnings, %d failures\033[0m\n' "$PASS" "$WARN" "$FAIL"
 [[ "$FAIL" -eq 0 ]] || exit 1
