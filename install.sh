@@ -386,13 +386,49 @@ install_gitleaks_hook() {
   mkdir -p "$DOTFILES/.git/hooks"
   cat > "$DOTFILES/.git/hooks/pre-commit" <<'EOF'
 #!/usr/bin/env bash
-# Block commits containing credentials.
+# Block commits containing credentials or work-internal identifiers.
+#
+# This hook is the PRIMARY defence, not a backstop. The denylist is deliberately
+# kept local and is never uploaded to GitHub as an Actions secret, so CI cannot
+# check it — and CI would only catch a leak after it was already pushed to a
+# public repo anyway. Here, the check runs before the commit exists.
+set -uo pipefail
+fail=0
+
+# --- 1. Credentials -----------------------------------------------------------
 if ! gitleaks protect --staged --no-banner --redact; then
   echo ""
   echo "gitleaks found a secret in the staged changes. Commit blocked."
   echo "Move the value into ~/.config/bash/secrets.sh. Do not use --no-verify."
-  exit 1
+  fail=1
 fi
+
+# --- 2. Work-internal identifiers --------------------------------------------
+# This repo is PUBLIC. One extended-regex pattern per line, untracked:
+DENYLIST="${DOTFILES_DENYLIST:-$HOME/.config/dotfiles/denylist}"
+if [ -r "$DENYLIST" ]; then
+  # Only ADDED lines. Pre-existing content is the repo-wide job of
+  # `doctor.sh`; flagging it on every commit would be noise you learn to skip.
+  added="$(git diff --cached -U0 | grep '^+' | grep -v '^+++')"
+  if [ -n "$added" ]; then
+    while IFS= read -r pat; do
+      case "$pat" in '' | \#*) continue ;; esac
+      if printf '%s\n' "$added" | grep -qiE -- "$pat"; then
+        echo ""
+        echo "Denylisted identifier matching '$pat' is in the staged changes."
+        echo "This repo is PUBLIC. Commit blocked."
+        printf '%s\n' "$added" | grep -inE -- "$pat" | head -3 | sed 's/^/    /'
+        fail=1
+      fi
+    done < "$DENYLIST"
+  fi
+else
+  # Do not block: a missing denylist should not stop all work. But say so, since
+  # a silently absent check is the failure mode this whole file exists to avoid.
+  echo "warning: no denylist at $DENYLIST — internal identifiers are NOT checked" >&2
+fi
+
+exit "$fail"
 EOF
   chmod +x "$DOTFILES/.git/hooks/pre-commit"
 }

@@ -63,7 +63,8 @@ jobs:
         run: ./doctor.sh --static
 
   secrets:
-    name: gitleaks + denylist
+    # No denylist step here by design — see the comment below.
+    name: gitleaks + tracked state
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,37 +77,22 @@ jobs:
           GITLEAKS_ENABLE_UPLOAD_ARTIFACT: "false"
           GITLEAKS_ENABLE_SUMMARY: "false"
 
-      - name: Internal identifier denylist
-        # This repo is PUBLIC. The patterns are employer-specific and therefore
-        # secret themselves — writing an internal hostname into this file would
-        # be the very leak the check prevents — so they come from a repository
-        # secret, one extended-regex pattern per line.
-        #
-        # Set it with:
-        #   gh secret set DOTFILES_DENYLIST < ~/.config/dotfiles/denylist
-        #
-        # Without the secret this step is skipped rather than silently passing,
-        # so an absent denylist can never look like a clean result.
-        env:
-          DENYLIST_CONTENT: ${{ secrets.DOTFILES_DENYLIST }}
-        run: |
-          if [ -z "${DENYLIST_CONTENT:-}" ]; then
-            echo "::warning::DOTFILES_DENYLIST secret is not set — skipping the"\
-                 "internal-identifier check. Set it with:"\
-                 "gh secret set DOTFILES_DENYLIST < ~/.config/dotfiles/denylist"
-            exit 0
-          fi
-          printf '%s\n' "$DENYLIST_CONTENT" > /tmp/denylist
-          fail=0
-          while IFS= read -r pat; do
-            case "$pat" in ''|\#*) continue ;; esac
-            if git grep -qiE -- "$pat" 2>/dev/null; then
-              echo "::error::denylisted pattern '$pat' appears in a tracked file"
-              fail=1
-            fi
-          done < /tmp/denylist
-          [ "$fail" -eq 0 ] && echo "no denylisted identifiers in tracked files"
-          exit "$fail"
+      # There is deliberately NO internal-identifier check here.
+      #
+      # The denylist patterns are employer-specific and are themselves the
+      # sensitive material — an internal hostname written into this file would be
+      # exactly the leak the check exists to prevent. The alternative, a
+      # DOTFILES_DENYLIST Actions secret, was considered and rejected: it means
+      # uploading those identifiers to a third party, and anyone who can push a
+      # workflow to this repo could then read them back out. On a public repo
+      # secrets are not even passed to pull requests from forks, so it would only
+      # ever have covered pushes from the owner.
+      #
+      # That check therefore lives in the pre-commit hook that install.sh
+      # installs, reading ~/.config/dotfiles/denylist locally. That is also the
+      # better place for it on the merits: the hook runs BEFORE the commit
+      # exists, whereas CI can only report a leak that is already public.
+      # `doctor.sh` (without --static) performs the same check repo-wide.
 
       - name: Personal app state must not be tracked
         run: |

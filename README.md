@@ -117,7 +117,7 @@ scaffolds each of these with a comment explaining what goes in it:
 | `~/.zshrc.local` | the same, for Linux zsh | `configs/zshrc` |
 | `~/.config/espanso/match/local.yml` | name, email, internal URLs | espanso |
 | `~/.hammerspoon/local.lua` | work hostnames, SSIDs | `urldispatch.lua`, `wifi.lua` |
-| `~/.config/dotfiles/denylist` | regexes that must never appear in a tracked file | `doctor.sh` |
+| `~/.config/dotfiles/denylist` | regexes that must never appear in a tracked file | pre-commit hook, `doctor.sh` |
 
 Four independent defences keep credentials out of git, and all four matter — a
 credential in history is the one mistake a normal commit cannot undo:
@@ -125,11 +125,27 @@ credential in history is the one mistake a normal commit cannot undo:
 1. `.gitignore` excludes `secrets.sh`, `local.sh`, `local.lua`, `local.yml`, `*.local`.
 2. `install.sh` **refuses to link** if something credential-shaped is sitting in
    `configs/`.
-3. A `gitleaks` pre-commit hook blocks the commit itself.
-4. `doctor.sh` checks all of the above, plus that nothing matching
-   `~/.config/dotfiles/denylist` has crept into a tracked file. That list is
-   untracked on purpose — an internal hostname written into the check would be
-   exactly the leak the check exists to prevent.
+3. The pre-commit hook blocks the commit itself — `gitleaks` for credentials, and
+   the denylist for work-internal identifiers in the added lines.
+4. `doctor.sh` checks all of the above repo-wide.
+
+### Why the denylist never leaves this machine
+
+`~/.config/dotfiles/denylist` holds your employer's name, internal domains and
+account identifiers, so **the patterns are themselves the sensitive material.**
+Writing them into a tracked file — or into the CI workflow — would be precisely
+the leak they exist to prevent.
+
+Storing them as a `DOTFILES_DENYLIST` Actions secret was considered and
+**rejected**. It uploads those identifiers to a third party; anyone able to push a
+workflow to the repo can read them back out regardless of the encryption; and on
+a public repo secrets are not passed to pull requests from forks, so it would
+only ever have covered your own pushes.
+
+The check therefore lives in the **pre-commit hook**, which is the better place
+on the merits anyway: it runs before the commit exists, whereas CI can only
+report a leak that is already public. CI still runs `gitleaks` and asserts that
+no personal application state is tracked — neither of which needs a secret.
 
 `macos/exported/` is gitignored: `macos/defaults.sh export` snapshots GUI app
 preferences there so you have a local restore path, but those are personal
