@@ -1,7 +1,0 @@
-- homebrew_tap:
-    name: caskroom/fonts
-    state: present
-  ignore_errors: yes
-
-- name: Install Nerd Fonts
-  homebrew_cask: name=font-hack-nerd-font

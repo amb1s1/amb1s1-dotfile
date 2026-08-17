@@ -1,0 +1,36 @@
+# Things that should never land in a repo, on any machine.
+
+# macOS
+.DS_Store
+.AppleDouble
+._*
+
+# Linux
+.directory
+.Trash-*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.nvimlog
+
+# Environments and secrets
+.env
+.env.local
+.direnv/
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Build noise
+node_modules/
+*.log

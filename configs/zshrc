@@ -1,0 +1,110 @@
+# zsh config — works on macOS and Linux
+
+# --- Homebrew ---------------------------------------------------------------
+# Lives in a different place on Apple Silicon, Intel Macs and Linux.
+for brew_prefix in /opt/homebrew /usr/local /home/linuxbrew/.linuxbrew; do
+  if [ -x "$brew_prefix/bin/brew" ]; then
+    eval "$("$brew_prefix/bin/brew" shellenv)"
+    break
+  fi
+done
+
+# --- Environment ------------------------------------------------------------
+export LANG=en_US.UTF-8
+export EDITOR=nvim
+export VISUAL=nvim
+export PATH="$HOME/bin:$HOME/.local/bin:$PATH"
+
+# --- History ----------------------------------------------------------------
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=50000
+SAVEHIST=50000
+setopt SHARE_HISTORY INC_APPEND_HISTORY EXTENDED_HISTORY
+setopt HIST_IGNORE_ALL_DUPS HIST_IGNORE_SPACE HIST_REDUCE_BLANKS HIST_VERIFY
+
+setopt AUTO_CD AUTO_PUSHD PUSHD_IGNORE_DUPS INTERACTIVE_COMMENTS
+setopt EXTENDED_GLOB NO_BEEP
+
+# --- Completion -------------------------------------------------------------
+autoload -Uz compinit
+compinit -d "$HOME/.cache/zcompdump"
+
+zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'
+zstyle ':completion:*' list-colors "${(s.:.)LS_COLORS}"
+zstyle ':completion:*' menu no
+zstyle ':fzf-tab:complete:cd:*' fzf-preview 'ls -1 $realpath'
+
+# --- Plugins ----------------------------------------------------------------
+# Plain clones, no framework. Order matters: syntax highlighting must be last.
+ZSH_PLUGINS="$HOME/.local/share/zsh/plugins"
+for plugin in fzf-tab zsh-autosuggestions zsh-syntax-highlighting; do
+  for candidate in "$ZSH_PLUGINS/$plugin/$plugin.plugin.zsh" "$ZSH_PLUGINS/$plugin/$plugin.zsh"; do
+    if [ -f "$candidate" ]; then
+      source "$candidate"
+      break
+    fi
+  done
+done
+
+# --- Key bindings -----------------------------------------------------------
+bindkey -e
+autoload -Uz up-line-or-beginning-search down-line-or-beginning-search
+zle -N up-line-or-beginning-search
+zle -N down-line-or-beginning-search
+# Up/Down search history for what you have already typed.
+bindkey '^[[A' up-line-or-beginning-search
+bindkey '^[[B' down-line-or-beginning-search
+bindkey '^[[1;5C' forward-word
+bindkey '^[[1;5D' backward-word
+
+# --- Tools ------------------------------------------------------------------
+# Every one of these is a no-op when the tool is not installed.
+command -v starship >/dev/null && eval "$(starship init zsh)"
+command -v zoxide   >/dev/null && eval "$(zoxide init zsh --cmd cd)"
+command -v mise     >/dev/null && eval "$(mise activate zsh)"
+command -v direnv   >/dev/null && eval "$(direnv hook zsh)"
+
+if command -v fzf >/dev/null; then
+  if fzf --zsh >/dev/null 2>&1; then
+    # fzf 0.48 and newer ship their own shell integration.
+    eval "$(fzf --zsh)"
+  else
+    # Older builds, Debian's included, keep it in separate files.
+    for fzf_file in "$HOME/.fzf.zsh" \
+                    /usr/share/doc/fzf/examples/key-bindings.zsh \
+                    /usr/share/doc/fzf/examples/completion.zsh; do
+      [ -f "$fzf_file" ] && source "$fzf_file"
+    done
+  fi
+fi
+
+export FZF_DEFAULT_OPTS='--height 40% --layout=reverse --border --info=inline'
+if command -v fd >/dev/null; then
+  export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
+elif command -v fdfind >/dev/null; then
+  export FZF_DEFAULT_COMMAND='fdfind --type f --hidden --follow --exclude .git'
+fi
+export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+
+# --- Aliases ----------------------------------------------------------------
+alias vim='nvim'
+alias vi='nvim'
+alias g='git'
+alias lg='lazygit'
+
+if command -v eza >/dev/null; then
+  alias ls='eza --group-directories-first'
+  alias ll='eza -lah --git --group-directories-first'
+  alias lt='eza --tree --level=2'
+else
+  alias ll='ls -lah'
+fi
+
+# Debian and Ubuntu rename these two to avoid clashing with other packages.
+command -v batcat >/dev/null && alias bat='batcat'
+command -v fdfind >/dev/null && alias fd='fdfind'
+
+# --- Machine-specific settings ----------------------------------------------
+# Work aliases, tokens, proxies and anything private go in ~/.zshrc.local,
+# which is not tracked by this repo.
+[ -f "$HOME/.zshrc.local" ] && source "$HOME/.zshrc.local"

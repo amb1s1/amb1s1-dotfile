@@ -1,0 +1,77 @@
+# Your name, email and any work-specific settings go in ~/.gitconfig.local,
+# which is not tracked by this repo. A missing include is silently ignored.
+[include]
+	path = ~/.gitconfig.local
+
+[core]
+	excludesfile = ~/.gitignore_global
+	editor = nvim
+	# Fall back to less when delta is not installed, so git still works.
+	pager = delta || less -R
+
+[interactive]
+	diffFilter = delta --color-only || cat
+
+[delta]
+	navigate = true
+	line-numbers = true
+	hyperlinks = true
+
+[init]
+	defaultBranch = main
+
+[diff]
+	algorithm = histogram
+	colorMoved = default
+	mnemonicPrefix = true
+	renames = true
+
+[merge]
+	# zdiff3 shows the common ancestor in conflicts. Needs git 2.35+.
+	conflictstyle = zdiff3
+
+[push]
+	autoSetupRemote = true
+	followTags = true
+
+[pull]
+	rebase = true
+
+[rebase]
+	autoStash = true
+	autoSquash = true
+	updateRefs = true
+
+[fetch]
+	prune = true
+	pruneTags = true
+	all = true
+
+[branch]
+	sort = -committerdate
+
+[tag]
+	sort = -version:refname
+
+[column]
+	ui = auto
+
+[rerere]
+	# Remember how you resolved a conflict and reapply it next time.
+	enabled = true
+	autoupdate = true
+
+[commit]
+	verbose = true
+
+[log]
+	date = iso
+
+[alias]
+	s = status --short --branch
+	l = log --oneline --graph --decorate -20
+	last = show --stat HEAD
+	amend = commit --amend --no-edit
+	unstage = restore --staged
+	undo = reset --soft HEAD~1
+	brs = branch --sort=-committerdate --format='%(committerdate:relative)%09%(refname:short)'
