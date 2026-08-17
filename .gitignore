@@ -1,0 +1,48 @@
+# =============================================================================
+# SECRETS — never track. See "Machine-specific settings" in the README.
+# =============================================================================
+**/secrets.sh
+**/local.sh
+**/local.lua
+**/local.yml
+**/*.local
+**/*.private
+.env
+.env.*
+*.pem
+*.key
+
+# =============================================================================
+# PERSONAL APPLICATION STATE — deliberately not published
+# =============================================================================
+# `defaults export` dumps of GUI apps (Raycast, BetterTouchTool, CleanShot,
+# Homerow, AltTab, Obsidian, Bear, …). macos/defaults.sh writes them here so
+# you have a local restore path; they are personal prefs with little value to
+# anyone else, and a Raycast dump in particular can carry more than it appears.
+macos/exported/
+
+# Leader Key's config.json embeds absolute paths to your own applications.
+# install.sh still links a local copy if you create one.
+configs/leaderkey.json
+
+# =============================================================================
+# GENERATED ARTEFACTS — the source is tracked, the output is not
+# =============================================================================
+# ble.sh is cloned here at a pinned commit by install.sh. It is a build input,
+# not config — the pinned SHA in install.sh is the tracked artefact.
+.cache/
+
+# =============================================================================
+# Noise
+# =============================================================================
+.DS_Store
+._*
+*.swp
+*.swo
+*~
+.idea/
+**/.claude/settings.local.json
+*.bak
+*.backup
+*.backup-*
+Brewfile.lock.json

@@ -1,0 +1,71 @@
+# ~/.config/ghostty/config
+#
+# Ghostty reads a plain key = value file. Reload in place with cmd+shift+,
+# List every valid key with:  ghostty +show-config --default --docs
+
+# --- Appearance -------------------------------------------------------------
+theme = nord
+font-family = JetBrains Mono
+font-size = 14
+font-thicken = true
+
+# Roomier text without wasting screen real estate.
+adjust-cell-height = 12%
+window-padding-x = 10
+window-padding-y = 8
+window-padding-balance = true
+
+# --- Window -----------------------------------------------------------------
+# AeroSpace tiles the windows, so Ghostty should not decorate or animate.
+window-decoration = true
+macos-titlebar-style = tabs
+window-save-state = always
+
+# --- Shell ------------------------------------------------------------------
+# brush is the INTERACTIVE shell; bash stays the system/login shell (ssh, cron,
+# launchd, git hooks, Hammerspoon's hs.execute). Both read the same ~/.bashrc.
+#
+# The two flags are the whole reason brush is launched from here rather than via
+# `chsh`, which cannot pass arguments:
+#
+#   --enable-zsh-hooks     REQUIRED for atuin. Without it brush registers
+#                          preexec_functions but never invokes them, and shell
+#                          history recording fails SILENTLY. Verified by probe.
+#   --enable-highlighting  Syntax highlighting; off by default.
+#
+# Both are marked experimental upstream (brush is v0.4). doctor.sh asserts they
+# are present here.
+#
+# ROLLBACK: replace this line with
+#   command = /opt/homebrew/bin/bash --login
+command = /opt/homebrew/bin/brush --login --enable-zsh-hooks --enable-highlighting
+
+# brush presents itself as bash (BASH_VERSION=5.2.37), so bash integration is
+# the correct setting here — there is no brush-specific option.
+shell-integration = bash
+shell-integration-features = cursor,sudo,title
+
+# --- Scrollback & selection -------------------------------------------------
+scrollback-limit = 100000
+copy-on-select = clipboard
+mouse-hide-while-typing = true
+
+# --- Cursor -----------------------------------------------------------------
+cursor-style = block
+cursor-style-blink = false
+
+# --- Keybinds ---------------------------------------------------------------
+# alt-hjkl is AeroSpace's. Keep Ghostty splits on cmd to avoid collisions.
+keybind = cmd+d=new_split:right
+keybind = cmd+shift+d=new_split:down
+keybind = cmd+opt+left=goto_split:left
+keybind = cmd+opt+right=goto_split:right
+keybind = cmd+opt+up=goto_split:up
+keybind = cmd+opt+down=goto_split:down
+keybind = cmd+shift+enter=toggle_split_zoom
+keybind = cmd+k=clear_screen
+
+# Quick terminal: a drop-down scratch shell, independent of AeroSpace tiling.
+keybind = global:cmd+grave_accent=toggle_quick_terminal
+quick-terminal-position = top
+quick-terminal-animation-duration = 0

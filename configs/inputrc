@@ -1,0 +1,59 @@
+# ~/.inputrc — GNU readline configuration
+#
+# This is the FALLBACK layer. When ble.sh is loaded it takes over line editing
+# entirely and these bindings are largely superseded. The file exists so that a
+# bash session without ble.sh — a rescue shell, a machine where the install
+# failed, `bash --norc` plus a manual source — still behaves the way you expect
+# rather than reverting to emacs bindings.
+#
+# readline also applies these to OTHER readline programs (python, psql, gdb,
+# sqlite3), which is a quiet bonus: vi mode everywhere, not just in bash.
+
+$include /etc/inputrc
+
+# --- Vi mode ----------------------------------------------------------------
+set editing-mode vi
+set keymap vi-insert
+
+# 'jj' leaves insert mode. Same binding you had in fish, at the readline level.
+"jj": vi-movement-mode
+
+# Show which mode you are in, since readline gives no cursor shape by default.
+set show-mode-in-prompt on
+set vi-ins-mode-string "\1\e[6 q\2"
+set vi-cmd-mode-string "\1\e[2 q\2"
+
+# --- Completion -------------------------------------------------------------
+set completion-ignore-case on
+set completion-map-case on          # treat - and _ as equivalent
+set show-all-if-ambiguous on        # one Tab, not two
+set show-all-if-unmodified on
+set completion-prefix-display-length 3
+set mark-symlinked-directories on
+set visible-stats on                # append a type indicator to matches
+set colored-stats on
+set colored-completion-prefix on
+set page-completions off
+set completion-query-items 200
+
+# --- Editing ----------------------------------------------------------------
+set bell-style none
+set skip-completed-text on
+set match-hidden-files off          # require an explicit dot
+set expand-tilde off
+set echo-control-characters off
+
+# History search with the arrows, scoped to what is already typed.
+"\e[A": history-search-backward
+"\e[B": history-search-forward
+
+# Keep ctrl-l working in vi mode.
+set keymap vi-command
+"\C-l": clear-screen
+set keymap vi-insert
+"\C-l": clear-screen
+
+# ctrl-a / ctrl-e are too ingrained to give up, even in vi mode.
+"\C-a": beginning-of-line
+"\C-e": end-of-line
+"\C-w": backward-kill-word

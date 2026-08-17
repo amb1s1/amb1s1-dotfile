@@ -1,0 +1,55 @@
+;; ~/.config/karabiner.edn  —  source of truth for Karabiner-Elements
+;;
+;; Karabiner reads ~/.config/karabiner/karabiner.json, which it REWRITES on
+;; every GUI change and which it will replace if you symlink the file itself.
+;; So we never track that JSON. This .edn file is the tracked artefact; goku
+;; compiles it into karabiner.json.
+;;
+;;   goku      compile once
+;;   gokuw     watch and recompile on save
+;;   brew services start goku    run the watcher permanently
+;;
+;; Modifier prefix notation (goku):
+;;   !  mandatory      #  optional
+;;   C  left_command   T  left_control   O  left_option   S  left_shift
+;;   Q  right_command  W  right_control  E  right_option   R  right_shift
+;;   so :!CTOleft_shift == command+control+option+shift == "hyper"
+;;
+;; VERIFY THIS ONE INTERACTIVELY after first compile. A bad modifier rule makes
+;; the keyboard unpleasant. Recovery: Karabiner-Elements menu bar icon >
+;; Quit, or delete the offending rule and re-run `goku`.
+
+{:profiles
+ {:Default {:default true
+            :sim     50     ;; ms window for "simultaneous" key detection
+            :delay   500    ;; ms delay_milliseconds
+            :alone   200    ;; ms to still count as a tap
+            :held    500}}  ;; ms to count as held
+
+ :main
+ [;; ------------------------------------------------------------------
+  ;; Caps Lock is the single highest-value key on the keyboard and macOS
+  ;; wastes it. Tap it for Escape (vi mode in fish), hold it for Hyper.
+  ;; Hyper then gives you a whole modifier layer that no app claims, which
+  ;; is what Leader Key / Raycast should hang off.
+  ;; ------------------------------------------------------------------
+  {:des "caps_lock: tap = escape, hold = hyper"
+   :rules [[:##caps_lock :!CTOleft_shift nil {:alone :escape}]]}
+
+  ;; ------------------------------------------------------------------
+  ;; Home-row-ish navigation on hyper, matching your AeroSpace hjkl muscle
+  ;; memory but for text cursor movement inside any app.
+  ;; ------------------------------------------------------------------
+  {:des "hyper + hjkl = arrows"
+   :rules [[:!CTOSh :left_arrow]
+           [:!CTOSj :down_arrow]
+           [:!CTOSk :up_arrow]
+           [:!CTOSl :right_arrow]]}
+
+  ;; ------------------------------------------------------------------
+  ;; Right-hand modifiers are dead weight on a laptop. Reclaim right_option
+  ;; as a second Escape-ish key is a matter of taste; left as an example of
+  ;; a plain remap you can delete.
+  ;; ------------------------------------------------------------------
+  {:des "right_option = forward delete"
+   :rules [[:right_option :delete_forward]]}]}

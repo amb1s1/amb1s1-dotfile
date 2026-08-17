@@ -3,8 +3,12 @@
 ![](https://img.shields.io/badge/works%20on-macOS-D376B3.svg)
 ![](https://img.shields.io/badge/works%20on-Linux-DD4814.svg)
 
-zsh, tmux, neovim and git, set up the same way on macOS and Linux. One script,
-one set of configs, no framework.
+Shell, tmux, neovim and git, set up the same way on macOS and Linux, plus a
+macOS desktop layer (tiling WM, key remapping, text expansion). One script, one
+set of configs, no framework.
+
+Shells differ by platform on purpose: **bash + brush on macOS**, **zsh on
+Linux**. Both read the same `starship.toml`, `gitconfig` and `tmux.conf`.
 
 ## Install
 
@@ -12,22 +16,31 @@ one set of configs, no framework.
 git clone https://github.com/amb1s1/amb1s1-dotfile.git ~/.dotfiles
 cd ~/.dotfiles
 ./install.sh
+./doctor.sh          # verify everything is wired up
 ```
 
 That will:
 
 1. Install the tools below with whichever package manager is present —
-   Homebrew, apt, dnf or pacman. On macOS it installs Homebrew first if needed.
+   Homebrew, apt, dnf or pacman. On macOS it installs Homebrew first if needed,
+   then applies [`Brewfile`](Brewfile) for the macOS-only layer.
 2. Install anything the distro does not package (starship, uv, ruff) from
    upstream into `~/.local`, so nothing outside the package step needs root.
 3. Pull a current neovim if the packaged one is older than 0.11, which is the
    case on Debian and Ubuntu.
-4. Clone the three zsh plugins and symlink every config.
-5. Make zsh your default shell.
+4. Build ble.sh from a pinned commit (skip with `--no-blesh`).
+5. On Linux, clone the three zsh plugins.
+6. Scaffold the untracked machine-specific files and install a `gitleaks`
+   pre-commit hook.
+7. Symlink every config — portable ones everywhere, macOS ones only on macOS.
+8. Set the default shell: Homebrew bash on macOS, zsh on Linux.
 
 Neovim installs its own plugins on first launch. Re-running the script is safe:
 real files it would replace are moved to `<name>.backup` first, and anything
 already in place is left alone. `./install.sh --no-packages` links configs only.
+
+`./doctor.sh` is read-only and asserts the things that break silently — see
+[Invariants](#invariants-that-break-silently).
 
 ## What you get
 
@@ -47,9 +60,14 @@ already in place is left alone. `./install.sh --no-packages` links configs only.
 
 ## What gets linked
 
+Portable — linked on macOS and Linux alike:
+
 | Repo file | Symlinked to |
 | --- | --- |
 | `configs/zshrc` | `~/.zshrc` |
+| `configs/bashrc` | `~/.bashrc` |
+| `configs/bash_profile` | `~/.bash_profile` |
+| `configs/inputrc` | `~/.inputrc` |
 | `configs/starship.toml` | `~/.config/starship.toml` |
 | `configs/tmux.conf` | `~/.tmux.conf` |
 | `configs/nvim-init.lua` | `~/.config/nvim/init.lua` |
@@ -57,15 +75,174 @@ already in place is left alone. `./install.sh --no-packages` links configs only.
 | `configs/gitignore_global` | `~/.gitignore_global` |
 | `configs/editorconfig` | `~/.editorconfig` |
 | `configs/words` | `~/.words` |
+| `configs/atuin.toml` | `~/.config/atuin/config.toml` |
+| `configs/espanso/` | `~/.config/espanso/` |
+
+macOS only — these tools do not exist on Linux, so linking them there would
+leave dead config behind:
+
+| Repo file | Symlinked to | What it is |
+| --- | --- | --- |
+| `configs/brushrc` | `~/.brushrc` | brush-only settings (near-empty by design) |
+| `configs/aerospace.toml` | `~/.aerospace.toml` | Tiling WM: workspaces, keybinds, app→workspace rules |
+| `configs/ghostty` | `~/.config/ghostty/config` | Terminal — and where brush is launched |
+| `configs/karabiner.edn` | `~/.config/karabiner.edn` | Keyboard remapping source; `goku` compiles it |
+| `configs/hammerspoon/` | `~/.hammerspoon/` | System event glue only (see below) |
+| `macos/defaults.sh` | — | `defaults` snapshots for GUI-only apps + system settings |
 
 ## Machine-specific settings
 
-Nothing private belongs in this repo. Two files are sourced last and tracked by
-neither git nor the installer:
+Nothing private belongs in this repo, and this repo is **public**. Config is
+tracked; credentials, identity and employer-specific values are not. The tracked
+config *references* them; something untracked supplies the value. `install.sh`
+scaffolds each of these with a comment explaining what goes in it:
 
-- `~/.zshrc.local` — work aliases, tokens, proxies, `PATH` additions.
-- `~/.gitconfig.local` — your name and email, and any per-machine git settings.
-  If you already had a git identity, the installer copies it here for you.
+| File | Holds | Read by |
+| --- | --- | --- |
+| `~/.gitconfig.local` | name, email, work URL rewrites | `configs/gitconfig` `[include]` |
+| `~/.config/bash/secrets.sh` | credential values, **mode 600** | `configs/bashrc` |
+| `~/.config/bash/local.sh` | work aliases, `PATH` additions, default profiles | `configs/bashrc` |
+| `~/.zshrc.local` | the same, for Linux zsh | `configs/zshrc` |
+| `~/.config/espanso/match/local.yml` | name, email, internal URLs | espanso |
+| `~/.hammerspoon/local.lua` | work hostnames, SSIDs | `urldispatch.lua`, `wifi.lua` |
+| `~/.config/dotfiles/denylist` | regexes that must never appear in a tracked file | `doctor.sh` |
+
+Four independent defences keep credentials out of git, and all four matter — a
+credential in history is the one mistake a normal commit cannot undo:
+
+1. `.gitignore` excludes `secrets.sh`, `local.sh`, `local.lua`, `local.yml`, `*.local`.
+2. `install.sh` **refuses to link** if something credential-shaped is sitting in
+   `configs/`.
+3. A `gitleaks` pre-commit hook blocks the commit itself.
+4. `doctor.sh` checks all of the above, plus that nothing matching
+   `~/.config/dotfiles/denylist` has crept into a tracked file. That list is
+   untracked on purpose — an internal hostname written into the check would be
+   exactly the leak the check exists to prevent.
+
+`macos/exported/` is gitignored: `macos/defaults.sh export` snapshots GUI app
+preferences there so you have a local restore path, but those are personal
+prefs with little value to anyone else — and a Raycast dump in particular can
+carry more than it appears. Leader Key's `config.json` is untracked for the same
+reason (it embeds absolute paths to your own applications); put a copy at
+`configs/leaderkey.json` and `install.sh` will link it.
+
+Audit the working tree and history at any time:
+
+```sh
+gitleaks dir . --no-banner
+```
+
+## Shell
+
+| | macOS | Linux |
+| --- | --- | --- |
+| **Interactive** | [brush](https://github.com/reubeno/brush), launched by Ghostty | zsh + three plugins |
+| **Login / system** | Homebrew bash 5.x | zsh |
+| **Config** | `configs/bashrc` (both shells) | `configs/zshrc` |
+
+On macOS, brush and bash read the **same `~/.bashrc`**. brush is a Rust
+bash-reimplementation with syntax highlighting and autosuggestions built in, and
+it consumes bash config unchanged — it parses `.bashrc` and atuin's init, runs
+every alias, `set -o vi`, and every `shopt` used here. bash stays the login and
+system shell (ssh, cron, launchd, git hooks, Hammerspoon's `hs.execute()`)
+because brush is v0.4: `select` is unsupported and traps/options are still in
+progress upstream. That is fine for a terminal window and wrong for launchd.
+
+ble.sh gives bash the fish-like layer (autosuggestions, syntactic highlighting,
+vim modes) and is **guarded off under brush**, which supplies its own. It has no
+package anywhere, so `install.sh` builds it from a pinned commit — upstream's
+newest tag is from 2023 while master is committed to weekly, so a version tag
+would pin you to genuinely old code. Skip it with `--no-blesh`.
+
+zsh is untouched on Linux and `configs/zshrc` is still maintained for it; the two
+shells coexist rather than one replacing the other.
+
+### Rollback
+
+Off brush — one line in `configs/ghostty`:
+
+```
+command = /opt/homebrew/bin/bash --login
+```
+
+Nothing else depends on brush, and bash is already the login shell, so that is
+the only edit.
+
+## macOS desktop layer
+
+One tool per job, and the tool whose config is text wins.
+
+| Job | Owner | Config |
+| --- | --- | --- |
+| Window tiling, workspaces | AeroSpace | `configs/aerospace.toml` |
+| Key remapping | Karabiner + goku | `configs/karabiner.edn` |
+| Text expansion everywhere | espanso | `configs/espanso/match/*.yml` |
+| Shell history search | atuin | `configs/atuin.toml` |
+| **System events** | **Hammerspoon** | `configs/hammerspoon/` |
+| GUI-only app prefs | `defaults` snapshots | `macos/defaults.sh` (output untracked) |
+
+Hammerspoon is deliberately the smallest piece. It does not manage windows —
+AeroSpace does that better and declaratively. What Hammerspoon owns is the
+category nothing else exposes: reacting to macOS system events.
+
+- `modules/wifi.lua` — SSID change → classify network trust zone
+- `modules/camera.lua` — camera in use → focused-window border turns red
+- `modules/power.lua` — sleep/wake → eject disks, restore borders
+- `modules/usbconsole.lua` — USB serial adapter attached → offer a `picocom` session
+- `modules/urldispatch.lua` — route work hostnames to the work browser profile
+
+If a module grows past ~60 lines, ask whether a purpose-built tool should own it.
+
+### Manual steps macOS will not let a script do
+
+1. **Accessibility + Input Monitoring** for Hammerspoon, AeroSpace,
+   Karabiner-Elements, espanso → System Settings ▸ Privacy & Security
+2. **Karabiner driver extension** — approve when prompted
+3. **Default browser → Hammerspoon**, only if you want `urldispatch.lua`
+4. **Add bash to `/etc/shells` and switch your login shell** — both need your
+   password, so `install.sh` prints the two commands rather than running them:
+   ```sh
+   echo "$(brew --prefix)/bin/bash" | sudo tee -a /etc/shells
+   chsh -s "$(brew --prefix)/bin/bash"
+   ```
+
+## Invariants that break silently
+
+Each of these was found by testing, and each fails **without any error** — a
+reasonable-looking cleanup breaks them and nothing tells you. `doctor.sh`
+asserts every one; the rationale is commented at the point of use.
+
+1. **PATH is set above the interactive guard in `bashrc`.** Below it, every
+   non-interactive shell — `hs.execute()`, launchd, cron, git hooks — gets no
+   PATH. The classic "works in my terminal, not from the app" bug.
+2. **The ble.sh guard tests `BRUSH_VERSION`, never `BASH_VERSION`.** brush
+   deliberately reports `BASH_VERSION=5.2.37`, so a `BASH_VERSION` test matches
+   brush and loads ble.sh into the wrong shell.
+3. **`bashrc` load order is fixed:** ble.sh (`--attach=none`, first line) →
+   starship → atuin → `ble-attach` (last line). Wrong order silently stops atuin
+   recording history.
+4. **brush launches from Ghostty's `command =` line with two flags**, not
+   `chsh` (which cannot pass arguments): `--enable-zsh-hooks` is **required for
+   atuin** — without it brush registers `preexec_functions` and never invokes
+   them — and `--enable-highlighting` turns on highlighting. bash stays the
+   login shell.
+5. **No `~/.config/brush/config.toml`.** brush supports one, but the schema is
+   undocumented and unknown keys are silently accepted, so a plausible-looking
+   config is an invisible no-op. `configs/brushrc` is used instead.
+6. **`karabiner.json` is generated, never tracked.** Karabiner replaces a
+   symlinked JSON with a real file. `karabiner.edn` is the source; `goku`
+   compiles it; `.gitignore` excludes the output.
+7. **In `aerospace.toml`, all bindings stay above the `[[on-window-detected]]`
+   blocks.** A bare `key = value` after a table array binds to *that table* —
+   valid TOML, binding never fires.
+8. **In `starship.toml`, literal parens must be escaped** (`[\(](240)`).
+   Unescaped, starship reads `(` as a conditional group and the module silently
+   renders nothing. Only `starship prompt` reveals it, not TOML parsing.
+9. **The brush flag check uses `ps -o command= -p $$`.** Do not simplify it to
+   test `preexec_functions` — atuin populates that array whether or not the flag
+   is present, so that check always passes.
+10. **ble.sh is pinned to a commit SHA**, not a tag (newest tag is 2023; master
+    ships weekly).
 
 ## tmux
 

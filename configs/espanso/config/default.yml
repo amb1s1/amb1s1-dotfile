@@ -1,0 +1,30 @@
+# ~/.config/espanso/config/default.yml
+#
+# NOTE ON PATH: espanso defaults to
+#   ~/Library/Application Support/espanso
+# on macOS. To use ~/.config/espanso (so it can live in this repo), stop
+# espanso, move the folder, then start it again — bootstrap.sh does this.
+# Confirm with:  espanso path
+
+# Expand on a word boundary rather than mid-token, so ":ts" inside a longer
+# word does not fire.
+backend: Auto
+word_separators: [" ", ",", ".", "\t", "\r", "\n", "(", ")", "[", "]", "{", "}", ":", ";", "\"", "'"]
+
+# Paste via clipboard for long expansions (much faster and more reliable than
+# synthesising keystrokes, especially into Electron apps like Slack).
+paste_shortcut: CtrlV
+preserve_clipboard: true
+
+# Toggle espanso off entirely with a double-tap of alt. Essential when you are
+# in a switch console and do not want anything rewriting your input.
+toggle_key: ALT
+search_shortcut: ALT+SPACE
+
+# Do not expand inside these apps. Add anything where a stray expansion would
+# be genuinely costly.
+filter_exec: false
+
+# Show a brief notification when espanso starts/reloads rather than silently.
+show_notifications: true
+show_icon: true

@@ -1,5 +1,8 @@
 # Your name, email and any work-specific settings go in ~/.gitconfig.local,
 # which is not tracked by this repo. A missing include is silently ignored.
+# Work-host URL rewrites belong there too, e.g.
+#   [url "git@gitlab.example.com:"]
+#       insteadOf = https://gitlab.example.com/
 [include]
 	path = ~/.gitconfig.local
 
@@ -16,9 +19,13 @@
 	navigate = true
 	line-numbers = true
 	hyperlinks = true
+	syntax-theme = Nord
 
 [init]
 	defaultBranch = main
+
+[protocol]
+	version = 2
 
 [diff]
 	algorithm = histogram
@@ -31,8 +38,10 @@
 	conflictstyle = zdiff3
 
 [push]
+	default = current
 	autoSetupRemote = true
 	followTags = true
+	recurseSubmodules = check
 
 [pull]
 	rebase = true
@@ -69,9 +78,19 @@
 
 [alias]
 	s = status --short --branch
+	st = status -sb
+	co = checkout
+	sw = switch
+	br = branch
+	ci = commit
 	l = log --oneline --graph --decorate -20
+	lg = log --graph --abbrev-commit --date=relative --pretty=format:'%C(auto)%h%d %s %C(dim)(%an, %ar)'
 	last = show --stat HEAD
 	amend = commit --amend --no-edit
 	unstage = restore --staged
 	undo = reset --soft HEAD~1
 	brs = branch --sort=-committerdate --format='%(committerdate:relative)%09%(refname:short)'
+	# What am I about to push?
+	out = log @{upstream}..HEAD --oneline
+	# What did I miss?
+	in = log HEAD..@{upstream} --oneline

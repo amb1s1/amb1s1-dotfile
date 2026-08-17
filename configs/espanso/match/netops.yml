@@ -1,0 +1,85 @@
+# Network / infra snippets.
+#
+# The point of espanso over a launcher snippet store is that it fires in EVERY
+# app — Jira, Slack, a switch console in Ghostty, a Confluence page — with no
+# picker step. That makes it worth using for the strings you retype daily.
+#
+# Employer-specific URLs (the internal NetBox, GitLab, …) belong in the
+# untracked match/local.yml, not here.
+
+matches:
+  # --- Dates & timestamps ---------------------------------------------------
+  - trigger: ":ts"
+    replace: "{{ts}}"
+    vars:
+      - name: ts
+        type: date
+        params:
+          format: "%Y-%m-%d %H:%M:%S %Z"
+
+  - trigger: ":utc"
+    replace: "{{utc}}"
+    vars:
+      - name: utc
+        type: script
+        params:
+          args: ["/bin/date", "-u", "+%Y-%m-%dT%H:%M:%SZ"]
+
+  # --- Change / incident scaffolding ---------------------------------------
+  - trigger: ":mw"
+    replace: |
+      **Maintenance window**
+      Start (UTC): {{utc}}
+      Duration:
+      Scope:
+      Blast radius:
+      Rollback:
+      Verification:
+    vars:
+      - name: utc
+        type: script
+        params:
+          args: ["/bin/date", "-u", "+%Y-%m-%dT%H:%M:%SZ"]
+
+  - trigger: ":rca"
+    replace: |
+      ## Summary
+
+      ## Impact
+      - Start:
+      - End:
+      - Affected:
+
+      ## Timeline (UTC)
+      -
+
+      ## Root cause
+
+      ## Contributing factors
+
+      ## What went well
+
+      ## Action items
+      - [ ]
+
+  # --- Fault-isolation checklist (fill as you go) ---------------------------
+  - trigger: ":triage"
+    replace: |
+      L1 link/optics:
+      L2 mac/arp:
+      L3 route/bgp:
+      L4 conntrack/fw:
+      MTU/PMTUD:
+      Verdict:
+      Owner:
+
+  # --- Things that are tedious to type correctly ---------------------------
+  # Cursor placeholder: $|$ is where the caret lands after expansion.
+  - trigger: ":cidr"
+    replace: "10.$|$.0.0/24"
+
+  - trigger: ":mtr"
+    replace: "mtr -rwzbc 100 $|$"
+
+  - trigger: ":tcpd"
+    replace: "sudo tcpdump -nni any -s0 -w /tmp/cap-$(date +%s).pcap host $|$"

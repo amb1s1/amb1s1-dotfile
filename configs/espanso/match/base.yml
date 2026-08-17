@@ -1,0 +1,23 @@
+# espanso match/base.yml
+#
+# Personal / general snippets. Domain snippets live in netops.yml.
+# Name, email and employer-specific snippets live in match/local.yml, which is
+# NOT tracked — see the example scaffolded by install.sh.
+
+matches:
+  # Em dash and arrows, which are otherwise a keyboard-viewer trip.
+  - trigger: ":--"
+    replace: "—"
+  - trigger: ":->"
+    replace: "→"
+  - trigger: ":chk"
+    replace: "✅"
+  - trigger: ":x"
+    replace: "❌"
+
+  # Fenced code block with the caret inside it.
+  - trigger: ":```"
+    replace: "```\n$|$\n```"
+
+  - trigger: ":shrug"
+    replace: "¯\\_(ツ)_/¯"

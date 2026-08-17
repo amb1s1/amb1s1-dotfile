@@ -34,3 +34,6 @@ __pycache__/
 # Build noise
 node_modules/
 *.log
+
+# Claude Code per-machine settings
+**/.claude/settings.local.json

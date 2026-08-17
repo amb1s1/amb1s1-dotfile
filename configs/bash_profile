@@ -1,0 +1,10 @@
+# ~/.bash_profile — login shells
+#
+# macOS runs every new terminal window as a LOGIN shell, which reads
+# .bash_profile and ignores .bashrc. That single quirk is why so many macOS
+# bash setups appear to "not load" their config. The fix is one line.
+#
+# Keep this file minimal: everything interactive belongs in .bashrc so that
+# both login and non-login shells get identical behaviour.
+
+[[ -r ~/.bashrc ]] && source ~/.bashrc

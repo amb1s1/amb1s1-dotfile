@@ -1,0 +1,46 @@
+# ~/.config/atuin/config.toml
+#
+# atuin replaces Ctrl-R with a searchable, durable shell history.
+#
+# Note: the encryption key lives at ~/.local/share/atuin/key and must NEVER be
+# committed. It is outside this repo, so it cannot be picked up by accident —
+# do not "helpfully" copy it in here later.
+
+## Search ---------------------------------------------------------------------
+# "fuzzy" is the right default for recalling half-remembered commands.
+search_mode = "fuzzy"
+
+# Show host/session context; useful when you run commands on several machines.
+filter_mode = "global"
+
+# When you press up-arrow specifically, scope to this directory — that is
+# almost always what you mean.
+filter_mode_shell_up_key_binding = "directory"
+
+## UI -------------------------------------------------------------------------
+style = "compact"
+inline_height = 20
+show_preview = true
+show_help = false
+enter_accept = false   # Enter runs the command; Tab edits it first
+
+## History hygiene ------------------------------------------------------------
+# Never record these, regardless of what lands in the shell buffer.
+history_filter = [
+  "^\\s",                  # any command starting with a space
+  "(?i)(token|secret|password|passwd|api[-_]?key)\\s*=",
+  "(?i)curl.*(-u|--user)\\s",
+  "(?i)authorization:\\s*(token|bearer)",   # inline API tokens in curl headers
+  "^\\s*op\\s+read",
+]
+
+# Do not record history from these directories at all.
+cwd_filter = [
+  ".*/secrets(/|$)",
+]
+
+## Sync -----------------------------------------------------------------------
+# Leave sync off unless you consciously decide to. Turning it on ships your
+# command history (encrypted, but still) to a server.
+auto_sync = false
+update_check = false

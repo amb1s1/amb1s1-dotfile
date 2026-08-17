@@ -1,0 +1,28 @@
+# ~/.brushrc — brush-specific settings only
+#
+# brush reads ~/.bashrc first (unchanged), then this file. So everything shared
+# between bash and brush belongs in .bashrc; only put things here that should
+# apply to brush and NOT to bash.
+#
+# WHY THERE IS NO config.toml
+# brush also supports ~/.config/brush/config.toml, and this repo deliberately
+# does not use it. The schema is undocumented, and brush silently accepts
+# unknown keys — feeding it `bogus_key = true` loads without complaint. A
+# config.toml full of plausible-looking keys would therefore be an invisible
+# no-op that reads like working configuration. Revisit if upstream documents it.
+#
+# The interactive feature flags (--enable-zsh-hooks, --enable-highlighting) are
+# set on Ghostty's `command` line, not here — they are startup flags with no
+# config-file equivalent.
+
+# Keep this file quiet. If you find yourself adding much, ask whether it belongs
+# in .bashrc so bash benefits too.
+
+# Nothing brush-specific is needed yet. Intentionally near-empty: the point of
+# brush is that your existing bash config works as-is.
+#
+# Deliberately NOT set here:
+#   PS1  — starship owns the prompt, and it is initialised in .bashrc for both
+#          shells. Setting PS1 here would be overwritten by starship anyway.
+#   vi mode / jj binding — both live in .bashrc so bash gets them too.
+:
