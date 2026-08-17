@@ -533,6 +533,46 @@ link_macos_configs() {
   fi
 }
 
+# goku writes into a Karabiner profile named exactly "Default". Karabiner-Elements
+# creates its first profile as "Default profile", and goku does not reconcile the
+# two — it aborts with a bare `Can't find profile named "Default"`, after having
+# already died with a Java FileNotFoundException if the file was absent entirely.
+# Neither message tells you the fix, so do it here.
+ensure_goku_default_profile() {
+  local kj="$HOME/.config/karabiner/karabiner.json"
+  [ -f "$kj" ] || return 0
+  have python3 || { warn "python3 not found; skipping the Karabiner profile check"; return 0; }
+
+  # Already correct — the common case on every re-run.
+  python3 -c '
+import json, sys
+d = json.load(open(sys.argv[1]))
+sys.exit(0 if any(p.get("name") == "Default" for p in d.get("profiles", [])) else 1)
+' "$kj" 2>/dev/null && return 0
+
+  if $DRY_RUN; then
+    printf '    [dry-run] rename the selected Karabiner profile to "Default" in %s\n' "$kj"
+    return 0
+  fi
+
+  info 'Renaming the Karabiner profile to "Default" (the name goku requires)'
+  python3 - "$kj" <<'PY'
+import json, sys
+path = sys.argv[1]
+d = json.load(open(path))
+profiles = d.setdefault("profiles", [])
+if not profiles:
+    profiles.append({"name": "Default", "selected": True,
+                     "complex_modifications": {"rules": []}})
+else:
+    # Rename the selected profile, falling back to the first, so a multi-profile
+    # setup keeps working on whichever one is actually in use.
+    target = next((p for p in profiles if p.get("selected")), profiles[0])
+    target["name"] = "Default"
+json.dump(d, open(path, "w"), indent=4, ensure_ascii=False)
+PY
+}
+
 # Things a symlink cannot express, all macOS-only.
 macos_special_cases() {
   is_macos || return 0
@@ -554,21 +594,59 @@ macos_special_cases() {
 
   # Karabiner: karabiner.json is GENERATED, never linked. Karabiner replaces a
   # symlinked JSON with a real file, so goku compiles into place instead.
+  # Karabiner's virtual HID driver must be approved by hand; macOS provides no
+  # CLI for it. Until then Karabiner remaps nothing AND never writes
+  # karabiner.json, so say so plainly rather than letting it look like a goku
+  # problem further down.
+  if have systemextensionsctl; then
+    local drv
+    drv="$(systemextensionsctl list 2>/dev/null \
+           | grep -i 'Karabiner-DriverKit-VirtualHIDDevice' | head -1 || true)"
+    if [ -n "$drv" ] && [ "${drv#*waiting for user}" != "$drv" ]; then
+      warn "Karabiner's driver extension is installed but NOT approved."
+      warn "  Nothing will remap until you approve it:"
+      warn "    System Settings > General > Login Items & Extensions >"
+      warn "    Driver Extensions > enable Karabiner-Elements"
+      run "open 'x-apple.systempreferences:com.apple.LoginItems-Settings.extension' >/dev/null 2>&1 || true"
+    fi
+  fi
+
+  # Karabiner-Elements writes karabiner.json the first time it runs, so it has
+  # to be opened once before goku has anything to update. Do that here instead
+  # of telling the reader to go and do it.
+  if [ -d /Applications/Karabiner-Elements.app ] \
+     && [ ! -f "$HOME/.config/karabiner/karabiner.json" ]; then
+    info "Launching Karabiner-Elements once so it writes karabiner.json"
+    run "open -a Karabiner-Elements >/dev/null 2>&1 || true"
+    $DRY_RUN || sleep 5
+  fi
+
   if have goku; then
     # goku UPDATES an existing karabiner.json rather than creating one from
     # scratch, and dies with a Java FileNotFoundException if it is absent.
-    # Karabiner-Elements writes that file the first time it launches, so the
-    # cask has to be installed and opened once before goku can do anything.
     if [ -f "$HOME/.config/karabiner/karabiner.json" ]; then
+      ensure_goku_default_profile
       info "Compiling karabiner.edn -> karabiner.json via goku"
-      run "goku >/dev/null 2>&1" || warn "goku failed — run 'goku' by hand to see why"
+      # goku exits 1 even on success, so its status cannot gate the message.
+      # Empty stdout from --dry-run is the real failure signal.
+      run "goku >/dev/null 2>&1 || true"
+      if ! $DRY_RUN && [ -z "$(goku --dry-run 2>/dev/null)" ]; then
+        warn "goku did not compile karabiner.edn — run 'goku' by hand to see why"
+      fi
       run "brew services start goku >/dev/null 2>&1 || true"   # gokuw: recompile on save
     else
-      warn "$HOME/.config/karabiner/karabiner.json does not exist yet, so goku cannot run."
-      warn "  Install Karabiner-Elements and launch it once, then run: goku"
+      warn "karabiner.json still absent — Karabiner-Elements is not installed yet."
+      warn "  Install it (brew bundle), approve the driver extension, then re-run this script."
     fi
   else
     warn "goku not installed; karabiner.edn will not be compiled"
+  fi
+
+  # borders (JankyBorders) is in the Brewfile and doctor.sh checks that it runs,
+  # but nothing ever started it. brew bundle also quits it when it reinstalls,
+  # so start it on every pass rather than only when it is missing.
+  if have borders; then
+    run "brew services start borders >/dev/null 2>&1 || true"
   fi
 
   if have aerospace; then

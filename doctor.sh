@@ -502,6 +502,24 @@ if live && is_macos && command -v goku >/dev/null 2>&1; then
                                          || warn "karabiner.edn may not compile — run: goku"
 fi
 
+# Karabiner's virtual HID driver has to be approved by hand — macOS offers no
+# CLI for it, by design. Unapproved, Karabiner remaps NOTHING and never writes
+# karabiner.json, which previously surfaced only as a confusing "karabiner.json
+# absent". The state is machine-readable, so read it and say what to click.
+if live && is_macos && command -v systemextensionsctl >/dev/null 2>&1; then
+  drv="$(systemextensionsctl list 2>/dev/null \
+         | grep -i 'Karabiner-DriverKit-VirtualHIDDevice' | head -1 || true)"
+  if [[ -z "$drv" ]]; then
+    warn "Karabiner driver extension not installed — reinstall the cask, then launch the app once"
+  elif [[ "$drv" == *"waiting for user"* ]]; then
+    warn "Karabiner driver extension is NOT approved — nothing will remap until it is:"
+    printf '      System Settings > General > Login Items & Extensions >\n'
+    printf '      Driver Extensions > enable Karabiner-Elements\n'
+  else
+    ok "Karabiner driver extension approved"
+  fi
+fi
+
 if live && command -v aerospace >/dev/null 2>&1; then
   aerospace list-workspaces --all >/dev/null 2>&1 \
     && ok "aerospace responding" || warn "aerospace not responding"

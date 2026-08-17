@@ -221,11 +221,31 @@ category nothing else exposes: reacting to macOS system events.
 
 If a module grows past ~60 lines, ask whether a purpose-built tool should own it.
 
+### On a fresh Mac, run `install.sh` twice
+
+Not a bug — an unavoidable consequence of the approvals below. Karabiner has to
+be installed, launched, and **approved by a human** before it writes
+`karabiner.json`, and only then can `goku` compile `configs/karabiner.edn` into
+it. No single run can cross that boundary, because macOS has no CLI for granting
+a driver extension — that is the whole point of the mechanism.
+
+So: run `./install.sh`, grant what it asks for, then run it again. It is
+idempotent, and the second pass picks up everything that was gated the first
+time. `./doctor.sh` names precisely what is still outstanding, including whether
+the driver extension is approved.
+
 ### Manual steps macOS will not let a script do
+
+Everything here needs either your password or a click in System Settings. These
+four are genuinely unautomatable; anything else the script now handles itself.
 
 1. **Accessibility + Input Monitoring** for Hammerspoon, AeroSpace,
    Karabiner-Elements, espanso → System Settings ▸ Privacy & Security
-2. **Karabiner driver extension** — approve when prompted
+2. **Karabiner driver extension** → System Settings ▸ General ▸ Login Items &
+   Extensions ▸ Driver Extensions ▸ enable Karabiner-Elements. Until this is
+   approved Karabiner remaps **nothing** and writes no `karabiner.json`, which
+   is why `doctor.sh` checks the state explicitly rather than leaving you to
+   infer it from a missing file.
 3. **Default browser → Hammerspoon**, only if you want `urldispatch.lua`
 4. **Add bash to `/etc/shells` and switch your login shell** — both need your
    password, so `install.sh` prints the two commands rather than running them:
