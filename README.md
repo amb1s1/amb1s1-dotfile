@@ -62,6 +62,7 @@ than in a workflow file that would drift from it.
 | Tool | Replaces | Why |
 | --- | --- | --- |
 | **starship** | oh-my-zsh themes | One binary, one TOML, no framework. Shell starts in ~90ms |
+| **eza** | `ls` | Colours, git status, tree mode. Backs `ls`/`ll`/`lt` |
 | **zoxide** | `cd` | Jumps to directories by frecency via `z` / `zi`; `cd` is left alone |
 | **fd** | `find` | Sane defaults, respects gitignore |
 | **ripgrep** | `ag` | Faster, and what fzf searches with |

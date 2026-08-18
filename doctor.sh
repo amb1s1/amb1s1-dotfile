@@ -199,7 +199,7 @@ fi
 if live; then
 hdr "Tools on PATH"
 
-for t in git starship atuin fzf rg bat fd zoxide delta; do
+for t in git starship atuin fzf rg bat eza fd zoxide delta; do
   command -v "$t" >/dev/null 2>&1 && ok "$t" || warn "$t not on PATH"
 done
 

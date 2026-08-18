@@ -57,13 +57,13 @@ as_root() {
 # Package names differ per manager, and not every tool is packaged everywhere.
 # Whatever is missing afterwards is picked up by install_missing_tools.
 # macOS gets a second layer on top of this — see ./Brewfile.
-BREW_PKGS=(git zsh bash tmux curl fzf ripgrep bat fd git-delta zoxide
+BREW_PKGS=(git zsh bash tmux curl fzf ripgrep bat eza fd git-delta zoxide
            starship uv ruff node atuin espanso)
-APT_PKGS=(git zsh bash tmux curl fzf ripgrep bat fd-find git-delta zoxide
+APT_PKGS=(git zsh bash tmux curl fzf ripgrep bat eza fd-find git-delta zoxide
           nodejs npm)
-DNF_PKGS=(git zsh bash tmux curl fzf ripgrep bat fd-find git-delta zoxide
+DNF_PKGS=(git zsh bash tmux curl fzf ripgrep bat eza fd-find git-delta zoxide
           nodejs npm)
-PACMAN_PKGS=(git zsh bash tmux curl fzf ripgrep bat fd git-delta zoxide
+PACMAN_PKGS=(git zsh bash tmux curl fzf ripgrep bat eza fd git-delta zoxide
              nodejs npm starship uv ruff atuin)
 
 # --- Packages ---------------------------------------------------------------
