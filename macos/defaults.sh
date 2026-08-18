@@ -39,7 +39,7 @@ DOMAINS=(
   com.brnbw.Leader-Key             # Leader Key (app prefs; config.json is stowed)
   com.lwouis.alt-tab-macos         # AltTab
   md.obsidian                      # Obsidian
-  net.shinyfrog.bear               # Bear (workspace 4 in .aerospace.toml)
+  net.shinyfrog.bear               # Bear
   org.hammerspoon.Hammerspoon      # Hammerspoon app prefs (init.lua is stowed)
   com.mitchellh.ghostty            # Ghostty app prefs (config file is stowed)
 
@@ -118,7 +118,7 @@ cmd_system() {
   defaults write NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool false
 
   # --- Window & animation ---------------------------------------------------
-  # AeroSpace tiles instantly; macOS animations just add latency on top.
+  # Window animations only add latency; turn them off.
   defaults write NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
   defaults write NSGlobalDomain NSWindowResizeTime -float 0.001
 
@@ -127,7 +127,7 @@ cmd_system() {
   defaults write NSGlobalDomain PMPrintingExpandedStateForPrint -bool true
 
   # --- Dock -----------------------------------------------------------------
-  # With AeroSpace + Leader Key you never click the Dock; reclaim the space.
+  # With Leader Key / Raycast you never click the Dock; reclaim the space.
   defaults write com.apple.dock autohide -bool true
   defaults write com.apple.dock autohide-delay -float 1000   # effectively never
   defaults write com.apple.dock autohide-time-modifier -float 0

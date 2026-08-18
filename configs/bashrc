@@ -1,36 +1,17 @@
-# ~/.bashrc — interactive bash configuration (macOS: bash + brush; see README)
+# ~/.bashrc — bash configuration. See README.
 #
-# WHY BASH: the stated reason for leaving fish was compatibility friction, and
-# bash is the shell that makes compatibility a strength rather than a
-# compromise — every runbook snippet, every `eval "$(tool init)"`, every vendor
-# doc example runs verbatim, with no port and no `bass` wrapper.
+# bash is the LOGIN and SYSTEM shell here, not the interactive one: ssh, cron,
+# launchd, git hooks and Hammerspoon's hs.execute() all land in bash. fish is
+# the interactive shell (launched by Ghostty; see configs/ghostty).
 #
-# The interactive experience fish offered (autosuggestions, syntax
-# highlighting, vim modes) comes from ble.sh, which is a full line editor
-# written in pure bash. It is not a downgrade from fish on those axes — its
-# highlighter does real syntactic analysis, including nested command
-# substitutions and heredocs.
+# So this file is deliberately plain — no line-editor layer. It used to source
+# ble.sh, which was dropped along with brush when fish became the interactive
+# shell: ble.sh only improves INTERACTIVE bash, and bash is now almost never
+# interactive here. ~/.inputrc carries the readline settings that still matter.
 #
-# IMPORTANT: on macOS this must be Homebrew bash 5.x, not /bin/bash. macOS
-# ships bash 3.2 (frozen in 2007 over the GPL3 licence change) and ble.sh
-# wants 4.0+.
-
-# ---------------------------------------------------------------------------
-# ble.sh — MUST be the first thing, loaded with --attach=none.
-# The matching `ble-attach` is the LAST line of this file. Upstream requires
-# this split so stdio stays connected to the controlling TTY.
-#
-# SKIPPED UNDER BRUSH. ble.sh reaches into GNU bash internals and must not load
-# under a reimplementation; brush supplies its own highlighting and
-# autosuggestions instead (see the brush branch further down).
-#
-# The discriminator is BRUSH_VERSION, *not* BASH_VERSION: brush deliberately
-# reports BASH_VERSION=5.2.37 so that bash-targeted init scripts work, so a
-# BASH_VERSION test would match brush and load ble.sh into it.
-# ---------------------------------------------------------------------------
-if [[ $- == *i* ]] && [[ -z ${BRUSH_VERSION-} ]] && [[ -r ~/.local/share/blesh/ble.sh ]]; then
-  source -- ~/.local/share/blesh/ble.sh --attach=none
-fi
+# On macOS this should still be Homebrew bash 5.x rather than /bin/bash (3.2,
+# frozen in 2007 over the GPL3 licence change) — several snippets below assume
+# bash 4+ syntax.
 
 # ---------------------------------------------------------------------------
 # PATH and environment — ABOVE the interactive guard, deliberately.
@@ -93,12 +74,8 @@ export BAT_THEME=Nord
 case $- in *i*) ;; *) return ;; esac
 
 # ---------------------------------------------------------------------------
-# Vim editing mode — set unconditionally, NOT inside the ble.sh block.
-#
-# ble.sh layers a much richer vi implementation on top when it is present, but
-# if it is missing or fails to load you still get readline's native vi mode
-# rather than silently falling back to emacs bindings. ~/.inputrc carries the
-# matching `jj` binding for the same reason.
+# Vim editing mode. ~/.inputrc carries the matching `jj` binding, so the two
+# stay consistent whether bash reads this file or only the inputrc.
 # ---------------------------------------------------------------------------
 set -o vi
 
@@ -129,16 +106,12 @@ shopt -s cmdhist
 # Every one of these is the vendor's own bash snippet, pasted unmodified.
 # That is the entire point of this migration.
 #
-# ORDER IS LOAD-BEARING. Bash has no native preexec hook, so atuin, starship
-# and ble.sh all compete for PROMPT_COMMAND and the DEBUG trap. The sequence
-# below is upstream's documented one, and the known failure modes are:
+# ORDER IS LOAD-BEARING. Bash has no native preexec hook, so atuin and starship
+# compete for PROMPT_COMMAND and the DEBUG trap:
 #
-#   ble.sh sourced after atuin   -> commands stop being recorded in atuin
-#   ble.sh attached before atuin -> atuin's ctrl-r binding is overwritten
-#   atuin before starship        -> starship's PROMPT_COMMAND can be clobbered
+#   atuin before starship -> starship's PROMPT_COMMAND can be clobbered
 #
-# Hence: ble.sh source (top of file, --attach=none) -> starship -> ... ->
-# atuin -> ble-attach (bottom of file). Modern atuin bundles its own
+# Hence starship first, then atuin last. Modern atuin bundles its own
 # bash-preexec, so no external ~/.bash-preexec.sh is needed.
 #
 # Verify after any change here:
@@ -170,6 +143,21 @@ export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
 # atuin LAST among the integrations: it binds ctrl-r and up-arrow, and should
 # win over fzf's ctrl-r.
 command -v atuin >/dev/null && eval "$(atuin init bash --disable-up-arrow)"
+
+# ...but "wins over fzf" is only true in the emacs and vi-INSERT keymaps. atuin
+# deliberately does not bind ctrl-r in vi-NORMAL mode, to preserve ble.sh's
+# `redo`; its own source says so. fzf then claims that slot, and fzf's history
+# widget reads bash's `builtin history` — a few dozen lines — not atuin's
+# database. In vi mode ctrl-r therefore means two different things depending on
+# mode, and the normal-mode one looks exactly like "my history is gone".
+#
+# Bind atuin in vi-normal too, via atuin's own helper so the keymap dispatch
+# stays atuin's problem. Cost: ctrl-r no longer means `redo` in normal mode.
+# Delete this block to get `redo` back; atuin also binds `/` in normal mode as
+# its own documented entry point.
+if declare -F atuin-bind >/dev/null 2>&1; then
+  atuin-bind -m vi-command '\C-r' atuin-search-vicmd 2>/dev/null || true
+fi
 
 # OrbStack ships a real bash init — no port needed, unlike its fish variant.
 [[ -r ~/.orbstack/shell/init.bash ]] && source ~/.orbstack/shell/init.bash 2>/dev/null
@@ -222,76 +210,3 @@ console() {
   echo "connecting to $tty at ${2:-9600} (ctrl-a ctrl-x to exit)"
   picocom -b "${2:-9600}" "$tty"
 }
-
-# ---------------------------------------------------------------------------
-# ble.sh configuration — the fish-like layer
-# ---------------------------------------------------------------------------
-if [[ ${BLE_VERSION-} ]]; then
-  bleopt default_keymap=vi
-
-  # 'jj' leaves insert mode — the fish binding, ported.
-  # The readline equivalent for the no-ble.sh case lives in ~/.inputrc.
-  ble-bind -m vi_imap -f 'j j' vi_imap/normal-mode
-
-  # Autosuggestion from history, fish-style, accepted with the right arrow.
-  bleopt complete_auto_complete=1
-  bleopt complete_auto_history=1
-  bleopt complete_ambiguous=1
-  ble-bind -m vi_imap -f 'C-f' 'auto_complete/insert'
-
-  # Report elapsed time for slow commands — replaces the fish `done` plugin.
-  bleopt exec_elapsed_mark='%s'
-  bleopt exec_errexit_mark=$'\e[91m[exit %d]\e[m'
-
-  # Nord-ish faces, consistent with BAT_THEME.
-  ble-face -s syntax_command       fg=blue
-  ble-face -s syntax_quoted        fg=yellow
-  ble-face -s syntax_error         fg=red
-  ble-face -s syntax_comment       fg=240
-  ble-face -s syntax_delimiter     fg=cyan
-  ble-face -s auto_complete        fg=240
-  ble-face -s region_match         bg=24,fg=white
-fi
-
-# ---------------------------------------------------------------------------
-# brush — the interactive shell in Ghostty (macOS). bash remains the system
-# shell everywhere.
-#
-# brush provides natively what ble.sh provides for bash, so this branch is the
-# counterpart to the ble.sh block at the top of the file. Both are skipped when
-# the other shell is running.
-#
-# NOTE: highlighting and autosuggestions are enabled by FLAGS, not from here —
-# `--enable-highlighting` and `--enable-zsh-hooks`, set on Ghostty's `command`
-# line. They have no documented config-file equivalent, and
-# ~/.config/brush/config.toml silently ignores unknown keys, so there is no way
-# to set them from a config file with any confidence.
-#
-# --enable-zsh-hooks is what makes atuin work: without it brush never invokes
-# preexec_functions, and history recording fails SILENTLY. doctor.sh asserts
-# the flag is present in the Ghostty config for exactly that reason.
-# ---------------------------------------------------------------------------
-if [[ ${BRUSH_VERSION-} ]]; then
-  # 'jj' leaves insert mode. brush implements `bind` as a real builtin and
-  # accepts readline-style specs.
-  bind '"jj": vi-movement-mode' 2>/dev/null
-
-  # Warn if --enable-zsh-hooks is missing, because the only other symptom is
-  # that atuin quietly stops recording and you would not notice for weeks.
-  #
-  # This inspects our OWN invocation via ps. Do NOT test preexec_functions
-  # instead: atuin populates that array whether or not the flag is present —
-  # brush simply never invokes it — so that check silently always passes.
-  if command -v atuin >/dev/null 2>&1; then
-    case "$(ps -o command= -p $$ 2>/dev/null)" in
-      *--enable-zsh-hooks*) ;;
-      *) printf '\033[33mbrush:\033[0m --enable-zsh-hooks missing — atuin is NOT recording history.\n' >&2
-         printf '       Fix the `command =` line in ~/.config/ghostty/config\n' >&2 ;;
-    esac
-  fi
-fi
-
-# ---------------------------------------------------------------------------
-# ble-attach — MUST be the last line.
-# ---------------------------------------------------------------------------
-[[ ! ${BLE_VERSION-} ]] || ble-attach

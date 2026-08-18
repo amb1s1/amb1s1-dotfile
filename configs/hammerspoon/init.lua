@@ -2,9 +2,8 @@
 --
 -- SCOPE: event glue ONLY.
 --
--- Window management, workspaces and app->workspace rules live in AeroSpace
--- (~/.aerospace.toml). Launchers live in Leader Key / Raycast. Key remapping
--- lives in Karabiner (~/.config/karabiner.edn).
+-- Window management is plain macOS. Launchers live in Leader Key / Raycast.
+-- Key remapping lives in Karabiner (~/.config/karabiner.edn).
 --
 -- Hammerspoon is here for the one thing nothing else exposes: reacting to
 -- macOS system events. Keep this file small. If a module grows past ~60 lines,
@@ -24,12 +23,6 @@ function M.toast(msg, seconds)
   hs.alert.show(msg, seconds or 2)
 end
 
--- Recolour the running JankyBorders instance. Re-invoking `borders` with new
--- options updates the live process; it does not spawn a second one.
-function M.borders(opts)
-  hs.task.new(os.getenv("HOME") .. "/.local/bin/borders", nil, function() return false end, opts):start()
-end
-
 _G.hsutil = M
 
 -- Modules -------------------------------------------------------------------
@@ -37,8 +30,8 @@ _G.hsutil = M
 -- module-level locals so the GC does not collect them.
 
 require("modules.wifi")        -- SSID changes -> announce trust zone
-require("modules.camera")      -- camera in use -> red border ("on a call")
-require("modules.power")       -- sleep/wake -> tidy up, restore borders
+require("modules.camera")      -- camera in use -> on-screen "on air" alert
+require("modules.power")       -- sleep/wake -> tidy up
 require("modules.usbconsole")  -- USB serial adapter -> offer a console session
 require("modules.urldispatch") -- route work URLs to the work browser profile
 

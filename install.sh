@@ -4,19 +4,16 @@
 #   ./install.sh                everything
 #   ./install.sh --dry-run      print what would happen, change nothing
 #   ./install.sh --no-packages  link configs only
-#   ./install.sh --no-blesh     skip building ble.sh from source
 set -euo pipefail
 
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 SKIP_PACKAGES=false
-SKIP_BLESH=false
 DRY_RUN=false
 for arg in "$@"; do
   case "$arg" in
     --dry-run)     DRY_RUN=true ;;
     --no-packages) SKIP_PACKAGES=true ;;
-    --no-blesh)    SKIP_BLESH=true ;;
     -h | --help)
       sed -n '2,6p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0 ;;
@@ -60,21 +57,14 @@ as_root() {
 # Package names differ per manager, and not every tool is packaged everywhere.
 # Whatever is missing afterwards is picked up by install_missing_tools.
 # macOS gets a second layer on top of this — see ./Brewfile.
-# gawk is here for ble.sh, whose GNUmakefile refuses to build without GNU awk.
-BREW_PKGS=(git zsh bash tmux neovim curl fzf ripgrep bat eza fd git-delta zoxide
-           lazygit btop starship uv ruff node stylua shfmt atuin espanso gawk)
-APT_PKGS=(git zsh bash tmux neovim curl fzf ripgrep bat fd-find git-delta zoxide
-          btop eza nodejs npm shfmt gawk)
-DNF_PKGS=(git zsh bash tmux neovim curl fzf ripgrep bat fd-find git-delta zoxide
-          btop eza nodejs npm lazygit shfmt gawk)
-PACMAN_PKGS=(git zsh bash tmux neovim curl fzf ripgrep bat fd git-delta zoxide
-             btop eza nodejs npm lazygit starship uv ruff shfmt atuin gawk)
-
-# ble.sh has no package anywhere and no useful git tag (newest tag: 2023;
-# master: committed weekly). Pin a commit so the install is reproducible.
-# To advance: pick a new SHA from https://github.com/akinomyoga/ble.sh/commits/master
-BLESH_COMMIT="95ae551dd687a0c61227839dda43f52ac7ea6631"   # 2026-08-11
-BLESH_PREFIX="$HOME/.local"
+BREW_PKGS=(git zsh bash tmux curl fzf ripgrep bat fd git-delta zoxide
+           starship uv ruff node atuin espanso)
+APT_PKGS=(git zsh bash tmux curl fzf ripgrep bat fd-find git-delta zoxide
+          nodejs npm)
+DNF_PKGS=(git zsh bash tmux curl fzf ripgrep bat fd-find git-delta zoxide
+          nodejs npm)
+PACMAN_PKGS=(git zsh bash tmux curl fzf ripgrep bat fd git-delta zoxide
+             nodejs npm starship uv ruff atuin)
 
 # --- Packages ---------------------------------------------------------------
 # Install the whole list at once, falling back to one at a time so a package
@@ -121,7 +111,7 @@ install_packages() {
   fi
 }
 
-# The macOS layer: GUI tools and the brush/bash shell stack, none of which
+# The macOS layer: GUI tools and the fish shell stack, none of which
 # exist on Linux. See ./Brewfile for what is in it and why.
 install_macos_extras() {
   is_macos || return 0
@@ -158,84 +148,7 @@ install_missing_tools() {
   fi
 
   have delta || warn "delta is not packaged here — git will fall back to less"
-  have lazygit || warn "lazygit is not packaged here — see https://github.com/jesseduffield/lazygit"
   have atuin || warn "atuin is not packaged here — see https://atuin.sh (the bashrc hook is a no-op without it)"
-}
-
-# The neovim config needs 0.11+. Debian and Ubuntu ship older builds, so pull
-# the current release straight from upstream when that happens.
-neovim_is_current() {
-  have nvim || return 1
-  local version major minor
-  version="$(nvim --version | sed -n '1s/^NVIM v\([0-9.]*\).*/\1/p')"
-  [ -n "$version" ] || return 1
-  major="${version%%.*}"
-  minor="${version#*.}"; minor="${minor%%.*}"
-  [ "$major" -gt 0 ] || [ "$minor" -ge 11 ]
-}
-
-ensure_current_neovim() {
-  if neovim_is_current; then return 0; fi
-
-  if is_macos; then
-    warn "Neovim is older than 0.11; run: brew upgrade neovim"
-    return 0
-  fi
-
-  local arch
-  case "$(uname -m)" in
-    x86_64) arch=x86_64 ;;
-    aarch64 | arm64) arch=arm64 ;;
-    *) warn "No neovim build for $(uname -m); the config needs 0.11+"; return 0 ;;
-  esac
-
-  info "Packaged neovim is too old; installing the current release to ~/.local/nvim"
-  run "mkdir -p '$HOME/.local/nvim' '$HOME/.local/bin'"
-  run "curl -fsSL 'https://github.com/neovim/neovim/releases/download/stable/nvim-linux-$arch.tar.gz' | tar -xz -C '$HOME/.local/nvim' --strip-components=1"
-  run "ln -sfn '$HOME/.local/nvim/bin/nvim' '$HOME/.local/bin/nvim'"
-}
-
-# ble.sh — the fish-like interactive layer for bash. On macOS brush is the
-# interactive shell and brings its own highlighting and autosuggestions, so
-# ble.sh only improves the bash fallback — still worth having, since bash is
-# what ssh, cron and rescue shells land in. Needs bash 4.0+, so on macOS this
-# is Homebrew's bash, never /bin/bash (3.2, frozen in 2007 over GPL3).
-install_blesh() {
-  local target="$BLESH_PREFIX/share/blesh/ble.sh"
-  local src="$DOTFILES/.cache/ble.sh"
-
-  if $SKIP_BLESH; then
-    info "Skipping ble.sh (--no-blesh); bash will use readline + ~/.inputrc"
-    return 0
-  fi
-
-  if [ -r "$target" ]; then
-    info "ble.sh already installed ($target)"
-    return 0
-  fi
-
-  # gawk is a real build dependency, not an optional nicety: ble.sh's GNUmakefile
-  # hard-fails with "Sorry, gawk could not be found" because it relies on GNU awk
-  # extensions that BSD awk (all macOS ships) does not implement.
-  for dep in git make gawk; do
-    have "$dep" || { warn "$dep is needed to build ble.sh; skipping"; return 0; }
-  done
-
-  info "Installing ble.sh at pinned commit ${BLESH_COMMIT:0:12}"
-
-  # A shallow clone cannot check out an arbitrary SHA, so fetch that one object.
-  run "mkdir -p '$(dirname "$src")'"
-  if [ ! -d "$src/.git" ]; then
-    run "git clone --filter=blob:none --no-checkout https://github.com/akinomyoga/ble.sh.git '$src'"
-  fi
-  run "git -C '$src' fetch --depth 1 origin '$BLESH_COMMIT'"
-  run "git -C '$src' checkout --detach '$BLESH_COMMIT'"
-  run "git -C '$src' submodule update --init --recursive --depth 1"
-
-  run "make -C '$src' install PREFIX='$BLESH_PREFIX'" || { warn "ble.sh build failed"; return 0; }
-
-  $DRY_RUN && return 0
-  [ -r "$target" ] || warn "ble.sh install did not produce $target"
 }
 
 # --- zsh --------------------------------------------------------------------
@@ -248,7 +161,7 @@ clone_once() {
 }
 
 # zsh is still the login shell on Linux, and configs/zshrc is maintained for it.
-# On macOS the shell is bash + brush, so the plugins are not needed there.
+# On macOS the interactive shell is fish, so the plugins are not needed there.
 install_zsh_plugins() {
   is_macos && return 0
   local dir="$HOME/.local/share/zsh/plugins"
@@ -487,7 +400,6 @@ link_configs() {
   link configs/inputrc          .inputrc
   link configs/starship.toml    .config/starship.toml
   link configs/tmux.conf        .tmux.conf
-  link configs/nvim-init.lua    .config/nvim/init.lua
   link configs/gitconfig        .gitconfig
   link configs/gitignore_global .gitignore_global
   link configs/editorconfig     .editorconfig
@@ -498,14 +410,12 @@ link_configs() {
   link configs/espanso/match/netops.yml   .config/espanso/match/netops.yml
 }
 
-# macOS-only. AeroSpace, Hammerspoon, Karabiner, Ghostty and Leader Key do not
+# macOS-only. Hammerspoon, Karabiner, Ghostty and Leader Key do not
 # exist on Linux, and brush is only the interactive shell on macOS — linking any
 # of these there would leave dead config behind.
 link_macos_configs() {
   is_macos || return 0
 
-  link configs/brushrc        .brushrc
-  link configs/aerospace.toml .aerospace.toml
   link configs/ghostty        .config/ghostty/config
   link configs/karabiner.edn  .config/karabiner.edn
 
@@ -642,17 +552,6 @@ macos_special_cases() {
     warn "goku not installed; karabiner.edn will not be compiled"
   fi
 
-  # borders (JankyBorders) is in the Brewfile and doctor.sh checks that it runs,
-  # but nothing ever started it. brew bundle also quits it when it reinstalls,
-  # so start it on every pass rather than only when it is missing.
-  if have borders; then
-    run "brew services start borders >/dev/null 2>&1 || true"
-  fi
-
-  if have aerospace; then
-    run "aerospace reload-config >/dev/null 2>&1 || true"
-  fi
-
   # init.lua installs an hs.pathwatcher on ~/.hammerspoon/, so linking already
   # triggered a reload. Start Hammerspoon if it was not running.
   if ! pgrep -qx Hammerspoon && [ -d /Applications/Hammerspoon.app ]; then
@@ -715,8 +614,6 @@ main() {
     install_packages
     install_macos_extras
     install_missing_tools
-    ensure_current_neovim
-    install_blesh
   fi
   install_zsh_plugins
   refuse_on_tracked_secret
@@ -735,7 +632,7 @@ main() {
     return 0
   fi
 
-  info "Done. Open a new terminal; neovim installs its plugins on first launch."
+  info "Done. Open a new terminal."
   echo
   echo "  Verify with: ./doctor.sh"
   # An `if` rather than `$BACKUP_USED && echo`, so the exit status of main() does
@@ -755,7 +652,7 @@ main() {
     echo
     echo "  Manual steps macOS will not let a script do:"
     echo "    1. Add bash to /etc/shells and change your login shell (needs sudo)"
-    echo "    2. Grant Accessibility + Input Monitoring to Hammerspoon, AeroSpace,"
+    echo "    2. Grant Accessibility + Input Monitoring to Hammerspoon,"
     echo "       Karabiner-Elements, espanso -> System Settings > Privacy & Security"
     echo "    3. Karabiner: approve the driver extension when prompted"
     echo "    4. Set Hammerspoon as the default browser IF you want urldispatch.lua"

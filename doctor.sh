@@ -71,13 +71,10 @@ check_link ".inputrc"                  "configs/inputrc"
 check_link ".zshrc"                    "configs/zshrc"
 check_link ".config/starship.toml"     "configs/starship.toml"
 check_link ".tmux.conf"                "configs/tmux.conf"
-check_link ".config/nvim/init.lua"     "configs/nvim-init.lua"
 check_link ".gitconfig"                "configs/gitconfig"
 check_link ".config/atuin/config.toml" "configs/atuin.toml"
 
 if is_macos; then
-  check_link ".brushrc"                "configs/brushrc"
-  check_link ".aerospace.toml"         "configs/aerospace.toml"
   check_link ".config/ghostty/config"  "configs/ghostty"
   check_link ".config/karabiner.edn"   "configs/karabiner.edn"
   check_link ".hammerspoon/init.lua"   "configs/hammerspoon/init.lua"
@@ -202,12 +199,12 @@ fi
 if live; then
 hdr "Tools on PATH"
 
-for t in git starship atuin fzf rg bat eza fd zoxide delta; do
+for t in git starship atuin fzf rg bat fd zoxide delta; do
   command -v "$t" >/dev/null 2>&1 && ok "$t" || warn "$t not on PATH"
 done
 
 if is_macos; then
-  for t in brew brush carapace aerospace goku espanso borders; do
+  for t in brew fish goku espanso; do
     command -v "$t" >/dev/null 2>&1 && ok "$t" || warn "$t not on PATH"
   done
   [[ -d /Applications/Hammerspoon.app ]] && ok "Hammerspoon.app" \
@@ -232,47 +229,15 @@ if [[ -r "$BASHRC" ]]; then
     bad "PATH is set BELOW the interactive guard — non-interactive shells will break"
   fi
 
-  # The ble.sh / starship / atuin load order is load-bearing; see configs/bashrc.
-  # Assert it here so a future edit cannot silently break history recording.
-  ble_src="$(grep -n 'blesh/ble.sh' "$BASHRC" | head -1 | cut -d: -f1)"
+  # starship then atuin: atuin must come LAST, or starship's PROMPT_COMMAND can
+  # be clobbered. ble.sh was part of this ordering until it was removed along
+  # with brush; what remains still matters.
   ship_line="$(grep -n 'starship init bash' "$BASHRC" | head -1 | cut -d: -f1)"
   atuin_line="$(grep -n 'atuin init bash' "$BASHRC" | head -1 | cut -d: -f1)"
-  attach_line="$(grep -n 'ble-attach' "$BASHRC" | tail -1 | cut -d: -f1)"
-  if [[ -n "$ble_src" && -n "$ship_line" && -n "$atuin_line" && -n "$attach_line" ]] \
-     && (( ble_src < ship_line && ship_line < atuin_line && atuin_line < attach_line )); then
-    ok "ble.sh -> starship -> atuin -> ble-attach order is correct"
+  if [[ -n "$ship_line" && -n "$atuin_line" ]] && (( ship_line < atuin_line )); then
+    ok "starship -> atuin order is correct"
   else
     bad "shell integration order is wrong — atuin history recording will break"
-  fi
-
-  # ble.sh must be guarded so it never loads inside brush. BASH_VERSION is NOT
-  # a valid discriminator: brush reports 5.2.37 on purpose, so a BASH_VERSION
-  # test matches brush and loads ble.sh into the wrong shell.
-  #
-  # Inspect the guard on the `source ble.sh` line itself, not the file as a
-  # whole — a passing mention of BRUSH_VERSION in a comment proves nothing.
-  ble_guard="$(grep -n 'blesh/ble.sh' "$BASHRC" | head -1 | cut -d: -f1)"
-  if [[ -z "$ble_guard" ]]; then
-    bad "no ble.sh source line in .bashrc"
-  else
-    guard_txt="$(sed -n "${ble_guard}p" "$BASHRC")"
-    if [[ "$guard_txt" == *BASH_VERSION* ]]; then
-      bad "the ble.sh guard tests BASH_VERSION — brush reports 5.2.37, so ble.sh will load into it"
-    elif [[ "$guard_txt" == *BRUSH_VERSION* ]]; then
-      ok "ble.sh source line is BRUSH_VERSION-guarded"
-    else
-      bad "the ble.sh source line has no BRUSH_VERSION guard — it will load into brush"
-    fi
-  fi
-
-  # The brush flag check must inspect our own invocation via ps. Testing
-  # preexec_functions instead silently always passes: atuin populates that
-  # array whether or not --enable-zsh-hooks is present; brush just never
-  # invokes it.
-  if grep -q 'ps -o command= -p \$\$' "$BASHRC"; then
-    ok "brush flag check uses ps, not preexec_functions"
-  else
-    bad "brush flag check does not use 'ps -o command= -p \$\$' — it will always pass"
   fi
 fi
 
@@ -282,36 +247,121 @@ if [[ -r "$DOTFILES/configs/bash_profile" ]]; then
     || bad ".bash_profile does not source .bashrc — nothing will load on macOS"
 fi
 
-# --- Ghostty's brush flags: a REPO-CONTENT check, so it runs under --static ---
+# --- Ghostty's shell: a REPO-CONTENT check, so it runs under --static ---------
 #
-# This is the single most important assertion in the file and it does not need
-# brush, a Mac, or anything installed — it reads configs/ghostty. The two flags
-# MUST be on Ghostty's command line, because chsh cannot pass arguments, which is
-# the whole reason brush is launched from Ghostty. --enable-zsh-hooks is the
-# dangerous one: without it brush registers atuin's preexec_functions but never
-# invokes them, so history recording fails with no error at all.
+# Which shell Ghostty launches decides whether atuin's ctrl-r is reachable at
+# all. It needs no Mac and nothing installed — it reads configs/ghostty.
 gcfg="$DOTFILES/configs/ghostty"
 if [[ -r "$gcfg" ]]; then
   cmdline="$(grep -E '^\s*command\s*=' "$gcfg" | head -1)"
-  if [[ "$cmdline" == *brush* ]]; then
-    [[ "$cmdline" == *--enable-zsh-hooks* ]] \
-      && ok "Ghostty passes --enable-zsh-hooks (atuin will record)" \
-      || bad "Ghostty launches brush WITHOUT --enable-zsh-hooks — atuin will silently stop recording"
-    [[ "$cmdline" == *--enable-highlighting* ]] \
-      && ok "Ghostty passes --enable-highlighting" \
-      || warn "no --enable-highlighting — brush will run unhighlighted"
+  if [[ "$cmdline" == *fish* ]]; then
+    # fish is the macOS default: atuin ships a first-class fish backend and binds
+    # ctrl-r in every mode, unlike bash where atuin skips vi-NORMAL. See
+    # invariant 4.
+    ok "Ghostty launches fish — atuin's native fish backend binds ctrl-r in every mode"
+  elif [[ "$cmdline" == *bash* ]]; then
+    ok "Ghostty launches bash — readline is present, so atuin's ctrl-r can bind"
+    warn "  note: in vi mode atuin skips vi-NORMAL; fzf claims ctrl-r there unless rebound"
   else
-    warn "Ghostty is not launching brush (currently: ${cmdline:-unset})"
+    warn "Ghostty launches neither fish nor bash (currently: ${cmdline:-unset})"
   fi
 fi
 
-# The repo must not ship a brush config.toml either: the schema is undocumented
-# and unknown keys are silently accepted, so a plausible-looking config is an
-# invisible no-op. .brushrc (documented) is used instead.
-if [[ -e "$DOTFILES/configs/brush-config.toml" ]]; then
-  bad "the repo ships a brush config.toml — undocumented schema, silently ignores unknown keys"
-else
-  ok "repo ships no brush config.toml (deliberate)"
+# shell-integration must name the SAME shell as `command`, or Ghostty emits the
+# wrong integration script and OSC 133 command marks are silently lost — which
+# also breaks notify-on-command-finish.
+if [[ -r "$gcfg" ]]; then
+  si="$(grep -E '^[[:space:]]*shell-integration[[:space:]]*=' "$gcfg" | head -1 | sed 's/.*=[[:space:]]*//')"
+  cmdsh="$(basename "$(printf '%s' "${cmdline#*=}" | sed 's/^[[:space:]]*//' | cut -d' ' -f1)")"
+  case "$cmdsh:$si" in
+    fish:fish | bash:bash | zsh:zsh | *:detect)
+      ok "shell-integration ($si) matches the launched shell ($cmdsh)" ;;
+    *)
+      bad "shell-integration is '$si' but Ghostty launches '$cmdsh' — OSC 133 marks will be lost" ;;
+  esac
+fi
+
+# --- Ghostty's LOADED config: does Ghostty actually use the repo's file? ------
+#
+# The assertion above reads configs/ghostty, which is right for --static but
+# blind to something that actually happened here: on macOS Ghostty ALSO reads
+#   ~/Library/Application Support/com.mitchellh.ghostty/config
+# and that file's scalars WIN. A stale one there set `command = fish`, so Ghostty
+# launched fish for weeks while the check above confirmed the repo's intent.
+# Reading the repo file proves what we intend, not what runs, so
+# ask Ghostty what it resolved. Same lesson as the driver-extension check.
+if live && is_macos; then
+  ghostty_bin=""
+  if command -v ghostty >/dev/null 2>&1; then
+    ghostty_bin="$(command -v ghostty)"
+  elif [[ -x /Applications/Ghostty.app/Contents/MacOS/ghostty ]]; then
+    ghostty_bin=/Applications/Ghostty.app/Contents/MacOS/ghostty
+  fi
+
+  if [[ -n "$ghostty_bin" ]]; then
+    loaded="$("$ghostty_bin" +show-config 2>/dev/null || true)"
+    livecmd="$(printf '%s\n' "$loaded" | grep -E '^command = ' | head -1)"
+    livecmd="${livecmd#command = }"
+
+    # Compare LOADED against the repo rather than hardcoding a shell name, so
+    # this keeps working whichever shell the repo settles on and still catches a
+    # shadowing file substituting a different one.
+    repocmd="$(grep -E '^[[:space:]]*command[[:space:]]*=' "$gcfg" 2>/dev/null \
+               | head -1 | sed 's/.*=[[:space:]]*//')"
+    if [[ -z "$livecmd" ]]; then
+      bad "Ghostty's loaded config sets no command — it will launch your login shell, not the configured one"
+    elif [[ -n "$repocmd" && "$livecmd" == "$repocmd" ]]; then
+      ok "Ghostty's LOADED command matches the repo ($(basename "${livecmd%% *}"))"
+    else
+      bad "Ghostty loads a different command than configs/ghostty specifies:"
+      printf '      loaded: %s\n' "$livecmd"
+      printf '      repo:   %s\n' "${repocmd:-unset}"
+      printf '      a config in ~/Library/Application Support/com.mitchellh.ghostty/\n'
+      printf '      overrides configs/ghostty; rename it to stop that.\n'
+    fi
+
+    # The palette too, so a shadowing file cannot silently revert the theme.
+    livetheme="$(printf '%s\n' "$loaded" | grep -E '^theme = ' | head -1)"
+    livetheme="${livetheme#theme = }"
+    repotheme="$(grep -E '^[[:space:]]*theme[[:space:]]*=' "$gcfg" 2>/dev/null \
+                 | head -1 | sed 's/.*=[[:space:]]*//')"
+    if [[ -n "$repotheme" && "$livetheme" == "$repotheme" ]]; then
+      ok "Ghostty's loaded theme matches the repo ($repotheme)"
+    else
+      warn "Ghostty's loaded theme is '${livetheme:-unset}', the repo says '${repotheme:-unset}'"
+    fi
+
+    # Can the shell Ghostty launches actually BIND ctrl-r? Every other atuin
+    # check here proves it RECORDS; none proved its search was reachable, and for
+    # a while it was not: brush accepted the binding and registered nothing, so
+    # ctrl-r searched a 31-line history while 8000 commands sat in atuin. brush is
+    # no longer installed; the lesson is why fish is the default. See invariant 4.
+    shellbin="$livecmd"; shellbin="${shellbin%% *}"
+    case "$(basename "$shellbin")" in
+      bash)
+        # Scope note: this proves bash SUPPORTS readline bindings, not that atuin
+        # is bound in a live session. It cannot prove the latter — a `-c` shell
+        # engages no line editor. Check by hand in the shell: bind -p | grep C-r
+        if [[ -x "$shellbin" ]]; then
+          nbind="$("$shellbin" -c 'bind -p 2>/dev/null | wc -l' 2>/dev/null | tr -d '[:space:]' || echo 0)"
+          if [[ "${nbind:-0}" -gt 0 ]]; then
+            ok "bash supports readline bindings ($nbind) — atuin's ctrl-r can attach"
+          else
+            bad "bash registers NO readline bindings — atuin's ctrl-r can never attach"
+          fi
+        fi
+        ;;
+      fish | zsh)
+        # atuin ships native backends for both, and they bind ctrl-r their own
+        # way (fish's own `bind`, zsh's `bindkey`). `bind -p` is not their
+        # interface, so running it would report a failure that is not real.
+        ok "$(basename "$shellbin") has a native atuin backend — atuin init binds ctrl-r"
+        ;;
+      *)
+        warn "unrecognised shell '$(basename "$shellbin")' — cannot tell whether atuin's ctrl-r binds"
+        ;;
+    esac
+  fi
 fi
 
 BASH_BIN="$(command -v bash)"
@@ -323,37 +373,16 @@ if live; then
       BASH_BIN="$BREW_BASH"
       bver="$("$BREW_BASH" -c 'echo ${BASH_VERSINFO[0]}')"
       (( bver >= 4 )) && ok "Homebrew bash $("$BREW_BASH" -c 'echo $BASH_VERSION')" \
-                      || bad "Homebrew bash is v$bver — ble.sh needs 4.0+"
+                      || bad "Homebrew bash is v$bver — parts of .bashrc need 4.0+"
     else
-      bad "no $BREW_BASH — system /bin/bash 3.2 is too old for ble.sh"
+      bad "no $BREW_BASH — system /bin/bash 3.2 is too old for parts of .bashrc"
     fi
-  fi
-
-  if [[ -r "$HOME/.local/share/blesh/ble.sh" ]]; then
-    ok "ble.sh installed (bash line editor)"
-  else
-    warn "ble.sh missing — bash has no autosuggestions (brush unaffected)"
   fi
 
   if is_macos; then
-    if command -v brush >/dev/null 2>&1; then
-      ok "brush $(brush --version 2>/dev/null | awk '{print $2}')"
-      # brush must be able to read the shared .bashrc.
-      brush -n "$BASHRC" >/dev/null 2>&1 \
-        && ok "brush parses the shared .bashrc" \
-        || bad "brush cannot parse .bashrc"
-    else
-      warn "brush not installed — the Ghostty config expects it"
-    fi
-
-    [[ -e "$HOME/.config/brush/config.toml" ]] \
-      && bad "~/.config/brush/config.toml exists — undocumented schema, silently ignores unknown keys" \
-      || ok "no ~/.config/brush/config.toml (deliberate)"
-
-    # brush must never be the login shell: chsh cannot pass its required flags.
+    # bash is the login shell; fish is interactive-only, launched by Ghostty.
     login_shell="$(dscl . -read "/Users/$USER" UserShell 2>/dev/null | awk '{print $2}')"
     case "$login_shell" in
-      *brush*) bad "login shell is brush — chsh cannot pass --enable-zsh-hooks; use bash" ;;
       "$BASH_BIN") ok "login shell is $BASH_BIN" ;;
       *) warn "login shell is $login_shell (not yet switched — see install.sh output)" ;;
     esac
@@ -400,7 +429,7 @@ fi
 # -----------------------------------------------------------------------------
 if live && is_macos; then
   hdr "Running processes"
-  for p in Hammerspoon AeroSpace espanso borders; do
+  for p in Hammerspoon espanso; do
     pgrep -qi "$p" && ok "$p running" || warn "$p not running"
   done
   # Karabiner-Elements 16 dropped karabiner_grabber; the equivalent process is
@@ -446,6 +475,34 @@ else
   ok "starship.toml literal parens are escaped"
 fi
 
+# (a2) The same trap, different character: a literal "$" in a git_status
+#      indicator. starship reads an unescaped $ as the start of a variable name,
+#      fails to parse that sub-format, and renders the indicator as NOTHING.
+#      `stashed = "$"` shipped broken for exactly this reason — and the render
+#      check below could not catch it, because git_status only evaluates its
+#      `stashed` sub-format in a repository that HAS a stash, and this repo has
+#      none. So check it statically, where no stash is required.
+#
+#      ${count} / ${ahead_count} are genuine variables and must pass.
+bad_dollar="$(awk '
+  /^\[git_status\]/ { inblk = 1; next }
+  /^\[/             { inblk = 0 }
+  inblk && /=/ {
+    v = $0
+    sub(/^[^=]*=[[:space:]]*/, "", v)
+    gsub(/\\\$/, "", v)                              # escaped \$ is correct
+    gsub(/\$\{[A-Za-z_][A-Za-z_0-9]*\}/, "", v)        # ${count}
+    gsub(/\$[A-Za-z_][A-Za-z_0-9]*/, "", v)            # $all_status
+    if (v ~ /\$/) printf "%d: %s\n", NR, $0
+  }
+' "$SHIP")"
+if [[ -n "$bad_dollar" ]]; then
+  bad "starship.toml git_status has an UNESCAPED literal \$ — that indicator renders nothing:"
+  printf '      %s\n' "$bad_dollar"
+else
+  ok "starship.toml git_status literal \$ is escaped"
+fi
+
 # (b) Render it and read stderr, which catches malformed formats generally.
 #
 #     --path matters: starship only evaluates a module when its trigger
@@ -462,35 +519,6 @@ if command -v starship >/dev/null 2>&1; then
   fi
 fi
 
-# NOT gated on macOS: aerospace.toml is repo content, and validating it does not
-# require AeroSpace to be installed. This is exactly the kind of check that is
-# worth running in CI on Linux.
-if command -v python3 >/dev/null 2>&1; then
-  python3 -c "import tomllib,sys; tomllib.load(open(sys.argv[1],'rb'))" \
-    "$DOTFILES/configs/aerospace.toml" 2>/dev/null \
-    && ok "aerospace.toml is valid TOML" || bad "aerospace.toml is not valid TOML"
-
-  # A bare `key = value` inside an [[on-window-detected]] table array silently
-  # becomes part of THAT table instead of [mode.*.binding]. It stays valid TOML,
-  # so nothing errors — the keybinding just never fires. So walk the file
-  # tracking the enclosing table, and flag any key inside a window-rule block
-  # that is not one of the keys such a block legitimately takes.
-  stray="$(awk '
-    /^[[:space:]]*\[/ { tbl = $0; next }
-    /^[[:space:]]*[A-Za-z0-9_-]+([.][A-Za-z0-9_-]+)*[[:space:]]*=/ {
-      if (tbl ~ /on-window-detected/) {
-        key = $1
-        if (key !~ /^(if[.]|run$|check-further-callbacks$)/) print NR ": " $0
-      }
-    }
-  ' "$DOTFILES/configs/aerospace.toml")"
-  if [[ -n "$stray" ]]; then
-    bad "a binding sits inside an [[on-window-detected]] block in aerospace.toml — it will never fire:"
-    printf '      %s\n' "$stray"
-  else
-    ok "all aerospace bindings are outside the [[on-window-detected]] blocks"
-  fi
-fi
 
 if live && is_macos && command -v goku >/dev/null 2>&1; then
   # goku exits 1 whether it succeeded or not, so its exit status says nothing —
@@ -520,10 +548,6 @@ if live && is_macos && command -v systemextensionsctl >/dev/null 2>&1; then
   fi
 fi
 
-if live && command -v aerospace >/dev/null 2>&1; then
-  aerospace list-workspaces --all >/dev/null 2>&1 \
-    && ok "aerospace responding" || warn "aerospace not responding"
-fi
 
 # -----------------------------------------------------------------------------
 if live; then

@@ -117,7 +117,7 @@ jobs:
       - name: TOML
         run: |
           # python3.11+ has tomllib in the stdlib, so no pip install needed.
-          for f in configs/aerospace.toml configs/starship.toml configs/atuin.toml; do
+          for f in configs/starship.toml configs/atuin.toml; do
             python3 -c "import tomllib,sys; tomllib.load(open(sys.argv[1],'rb'))" "$f" \
               && echo "ok  $f"
           done

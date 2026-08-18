@@ -11,9 +11,7 @@
 # this repo actually references. Personal apps and language toolchains are not
 # listed — install those however you like.
 
-tap "nikitabobko/tap"          # aerospace
 tap "yqrashawn/goku"           # goku (karabiner.edn compiler)
-tap "FelixKratz/formulae"      # borders (JankyBorders)
 
 # --- Shells ------------------------------------------------------------------
 # TWO SHELLS, ONE CONFIG. Both read ~/.bashrc.
@@ -24,10 +22,8 @@ tap "FelixKratz/formulae"      # borders (JankyBorders)
 #          v0.4 — `select` unsupported, traps/options in progress upstream.
 #   bash   SYSTEM shell: login, ssh, cron, launchd, git hooks, hs.execute().
 #          Homebrew's 5.x, never /bin/bash (3.2, frozen in 2007 over GPL3).
-brew "brush"
 brew "bash"
-brew "bash-completion@2"     # completions for everything carapace misses
-brew "carapace"              # modern completions: kubectl, terraform, gh, aws
+brew "fish"                  # THE interactive shell; configs/ghostty launches it
 
 # Tested and rejected: oils-for-unix (OSH) is the most bash-compatible
 # alternative in principle but unusable on macOS — extended globs need
@@ -39,16 +35,13 @@ brew "carapace"              # modern completions: kubectl, terraform, gh, aws
 cask "ghostty"               # config: configs/ghostty -> ~/.config/ghostty/config
 brew "atuin"                 # history; config: configs/atuin.toml
 brew "gitleaks"              # pre-commit secret scanning
-brew "direnv"                # per-directory env; the right home for project vars
 
 # --- Window management / input ----------------------------------------------
-cask "aerospace"                    # tiling WM; config: configs/aerospace.toml
 cask "hammerspoon"                  # system-event glue; config: configs/hammerspoon/
 cask "karabiner-elements"           # key remapping at driver level
 brew "yqrashawn/goku/goku"          # compiles karabiner.edn -> karabiner.json
 cask "espanso"                      # text expansion; config: configs/espanso/
 cask "leader-key"                   # launcher (config.json is untracked)
-brew "FelixKratz/formulae/borders"  # JankyBorders — referenced by aerospace + hammerspoon
 
 # --- Fonts -------------------------------------------------------------------
 cask "font-jetbrains-mono"   # ghostty's font-family

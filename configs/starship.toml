@@ -17,6 +17,33 @@
 add_newline = true
 command_timeout = 500
 
+# --- Palette ------------------------------------------------------------------
+# TokyoNight Storm, as exact hex values taken from Ghostty's own theme file
+# (/Applications/Ghostty.app/Contents/Resources/ghostty/themes/TokyoNight Storm),
+# so the prompt and the terminal cannot drift apart. If you change `theme` in
+# configs/ghostty, change these too.
+#
+# These names deliberately shadow starship's built-in colour names, which makes
+# every `style = "blue"` below resolve to the exact terminal hex rather than the
+# 4-bit ANSI approximation. Verified by rendering the prompt and confirming it
+# emits 24-bit escapes (38;2;R;G;B), not 4-bit ones.
+#
+# NOTHING here uses a Nerd Font glyph. The symbols are plain Unicode that any
+# terminal font carries, because this same file renders over ssh on Linux boxes
+# where Nerd Fonts are not installed.
+palette = "tokyonight_storm"
+
+[palettes.tokyonight_storm]
+fg      = "#c0caf5"   # foreground
+dim     = "#4e5575"   # bright black — punctuation, timings, anything secondary
+red     = "#f7768e"
+green   = "#9ece6a"
+yellow  = "#e0af68"
+orange  = "#ff9e64"   # TokyoNight's accent orange; not one of the 16 ANSI slots
+blue    = "#7aa2f7"
+magenta = "#bb9af7"
+cyan    = "#7dcfff"
+
 format = """
 $hostname\
 $directory\
@@ -35,7 +62,7 @@ format = '[$hostname](bold red) '
 
 # --- Directory --------------------------------------------------------------
 [directory]
-style = "cyan"
+style = "bold cyan"
 truncation_length = 3
 truncate_to_repo = true
 truncation_symbol = "…/"
@@ -49,21 +76,33 @@ symbol = ""
 # parser reads "(" as the start of a conditional group and the whole module
 # silently fails to render — the TOML is still valid, so only running
 # `starship prompt` reveals it.
-format = '[\(](240)[$branch](yellow)'
+format = '[\(](dim)[$branch](magenta)'
 truncation_length = 24
 
 [git_status]
-format = '[$all_status$ahead_behind](240)[\)](240) '
-conflicted = "="
-ahead = "⇡${count}"
-behind = "⇣${count}"
-diverged = "⇕⇡${ahead_count}⇣${behind_count}"
-untracked = "?"
-stashed = "$"
-modified = "!"
-staged = "+"
-renamed = "»"
-deleted = "✘"
+# The wrapper is dim; each indicator carries its own colour, which nests inside
+# the outer style group. Colouring them individually is the point — "clean but
+# ahead" and "uncommitted changes" should not look identical at a glance.
+#
+# `stashed` needs its "$" ESCAPED as \$. starship reads a bare $ as the start of
+# a variable name, fails to parse the sub-format, and then renders that indicator
+# as NOTHING — no error at the prompt, the stash marker just never appears.
+# ${count} and friends below are real variables and are left alone.
+#
+# This one hides well: it only surfaces in a repo that actually HAS a stash, so
+# `starship prompt` in a stash-free repo reports no warning at all. Same shape as
+# the unescaped-paren trap. doctor.sh therefore also greps for it statically.
+format = '[$all_status$ahead_behind](dim)[\)](dim) '
+conflicted = "[=](bold red)"
+ahead = "[⇡${count}](green)"
+behind = "[⇣${count}](yellow)"
+diverged = "[⇕⇡${ahead_count}⇣${behind_count}](bold orange)"
+untracked = "[?](dim)"
+stashed = '[\$](cyan)'
+modified = "[!](yellow)"
+staged = "[+](green)"
+renamed = "[»](magenta)"
+deleted = "[✘](red)"
 
 # --- Infra context ----------------------------------------------------------
 # The three things worth a prompt slot, because getting them wrong is expensive.
@@ -72,7 +111,7 @@ deleted = "✘"
 disabled = false
 symbol = "⎈ "
 format = '[$symbol$context( \($namespace\))]($style) '
-style = "blue"
+style = "bold blue"
 # Only show it where a mistake would actually matter.
 detect_files = ['Chart.yaml', 'kustomization.yaml', 'skaffold.yaml']
 detect_folders = ['manifests', 'k8s', 'charts']
@@ -86,7 +125,7 @@ detect_folders = ['manifests', 'k8s', 'charts']
 disabled = false
 symbol = "tf "
 format = '[$symbol$workspace]($style) '
-style = "purple"
+style = "magenta"
 
 [aws]
 disabled = false
@@ -96,7 +135,7 @@ symbol = "aws"
 # behind. Writing `$symbol$profile` with a trailing space in the symbol
 # instead produces "aws  (region)" whenever no profile is set.
 format = '[$symbol( $profile)( \($region\))]($style) '
-style = "yellow"
+style = "orange"
 
 # Long ambient profile names are worth shortening rather than blanking:
 # mapping one to "" leaves the symbol and a double space behind. Profile names
@@ -108,7 +147,7 @@ style = "yellow"
 # --- Timing -----------------------------------------------------------------
 [cmd_duration]
 min_time = 2_000
-format = "[$duration](240) "
+format = "[$duration](dim) "
 
 # --- Prompt character -------------------------------------------------------
 # Green on success, red on failure.

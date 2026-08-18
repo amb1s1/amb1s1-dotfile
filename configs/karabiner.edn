@@ -37,7 +37,7 @@
    :rules [[:##caps_lock :!CTOleft_shift nil {:alone :escape}]]}
 
   ;; ------------------------------------------------------------------
-  ;; Home-row-ish navigation on hyper, matching your AeroSpace hjkl muscle
+  ;; Home-row-ish navigation on hyper, matching vim hjkl muscle
   ;; memory but for text cursor movement inside any app.
   ;; ------------------------------------------------------------------
   {:des "hyper + hjkl = arrows"

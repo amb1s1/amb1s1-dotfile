@@ -4,9 +4,21 @@
 # List every valid key with:  ghostty +show-config --default --docs
 
 # --- Appearance -------------------------------------------------------------
-theme = nord
+# Theme names are the filenames Ghostty ships, matched case-insensitively; see
+#   ghostty +list-themes
+# Validate any change to this file with:
+#   ghostty +validate-config --config-file=configs/ghostty
+# starship.toml carries the SAME palette as hex values, so the prompt and the
+# terminal agree exactly. Change one, change the other.
+theme = TokyoNight Storm
+
+# Repeated font-family builds a fallback chain, tried in order per glyph. The
+# plain JetBrains Mono has no Nerd Font glyphs, so eza's icons and lazygit's
+# devicons need the second entry. The prompt itself deliberately uses none, so
+# it still renders correctly over ssh on a box without Nerd Fonts installed.
 font-family = JetBrains Mono
-font-size = 14
+font-family = Hack Nerd Font Mono
+font-size = 18
 font-thicken = true
 
 # Roomier text without wasting screen real estate.
@@ -16,46 +28,71 @@ window-padding-y = 8
 window-padding-balance = true
 
 # --- Window -----------------------------------------------------------------
-# AeroSpace tiles the windows, so Ghostty should not decorate or animate.
+# Window management is plain macOS; keep decoration on and animation off.
 window-decoration = true
 macos-titlebar-style = tabs
 window-save-state = always
+confirm-close-surface = false
+
+# Left alt sends Esc+ so readline/ble.sh word motions (alt+f, alt+b) work.
+macos-option-as-alt = true
 
 # --- Shell ------------------------------------------------------------------
-# brush is the INTERACTIVE shell; bash stays the system/login shell (ssh, cron,
-# launchd, git hooks, Hammerspoon's hs.execute). Both read the same ~/.bashrc.
+# fish is the INTERACTIVE shell on macOS. bash remains the LOGIN shell — ssh,
+# cron, launchd, git hooks, Hammerspoon's hs.execute() — and reads ~/.bashrc.
 #
-# The two flags are the whole reason brush is launched from here rather than via
-# `chsh`, which cannot pass arguments:
+# All three candidates were tried on a real machine; this is what decided it:
 #
-#   --enable-zsh-hooks     REQUIRED for atuin. Without it brush registers
-#                          preexec_functions but never invokes them, and shell
-#                          history recording fails SILENTLY. Verified by probe.
-#   --enable-highlighting  Syntax highlighting; off by default.
+#   brush  Drives its line editor with reedline, not GNU readline, and its `bind`
+#          builtin accepts a binding then registers NOTHING: after
+#          `bind -x '"\C-r": fn'`, `bind -p` prints zero lines where bash prints
+#          422. atuin records correctly but ctrl-r can never attach, and fzf's
+#          ctrl-t / alt-c die the same way. atuin has no brush backend at all —
+#          it only gets as far as `atuin init bash` because brush reports
+#          BASH_VERSION=5.2.37, and those bindings then evaporate.
 #
-# Both are marked experimental upstream (brush is v0.4). doctor.sh asserts they
-# are present here.
+#   bash   Binds ctrl-r correctly in the emacs and vi-INSERT keymaps, but atuin
+#          deliberately skips vi-NORMAL to preserve ble.sh's `redo`. fzf then
+#          claims that slot, and fzf's widget reads bash's `builtin history` —
+#          dozens of lines — not atuin's database. In vi mode ctrl-r therefore
+#          means two different things depending on which mode you are in, and the
+#          normal-mode one looks exactly like "my history is gone".
 #
-# ROLLBACK: replace this line with
+#   fish   Has a first-class atuin backend, binds ctrl-r in every mode, and holds
+#          this machine's complete interactive history. No keymap gap.
+#
+# Recording and searching are SEPARATE capabilities. Every atuin check in
+# doctor.sh used to prove only the first, which is how the brush and bash gaps
+# went unnoticed. See invariant 4.
+#
+# ROLLBACK to bash + ble.sh (also set shell-integration = bash below):
 #   command = /opt/homebrew/bin/bash --login
-command = /opt/homebrew/bin/brush --login --enable-zsh-hooks --enable-highlighting
+command = /opt/homebrew/bin/fish
 
-# brush presents itself as bash (BASH_VERSION=5.2.37), so bash integration is
-# the correct setting here — there is no brush-specific option.
-shell-integration = bash
+# Must match the shell above: fish gets fish integration. Ghostty cannot infer
+# it, and a mismatch silently costs OSC 133 command marks.
+shell-integration = fish
 shell-integration-features = cursor,sudo,title
 
 # --- Scrollback & selection -------------------------------------------------
 scrollback-limit = 100000
 copy-on-select = clipboard
 mouse-hide-while-typing = true
+clipboard-read = allow
+clipboard-write = allow
+
+# --- Notifications ----------------------------------------------------------
+# Nudge when a long command finishes while you are in another window. Depends on
+# OSC 133 semantic marks, which shell-integration above provides.
+notify-on-command-finish = unfocused
+notify-on-command-finish-after = 30s
 
 # --- Cursor -----------------------------------------------------------------
 cursor-style = block
 cursor-style-blink = false
 
 # --- Keybinds ---------------------------------------------------------------
-# alt-hjkl is AeroSpace's. Keep Ghostty splits on cmd to avoid collisions.
+# Splits stay on cmd, leaving alt-hjkl free for the shell and editors.
 keybind = cmd+d=new_split:right
 keybind = cmd+shift+d=new_split:down
 keybind = cmd+opt+left=goto_split:left
@@ -65,7 +102,11 @@ keybind = cmd+opt+down=goto_split:down
 keybind = cmd+shift+enter=toggle_split_zoom
 keybind = cmd+k=clear_screen
 
-# Quick terminal: a drop-down scratch shell, independent of AeroSpace tiling.
+# shift+enter sends Esc+CR — a literal newline inside a REPL or a multi-line
+# prompt, instead of submitting. Ghostty sends plain CR without this.
+keybind = shift+enter=text:\x1b\r
+
+# Quick terminal: a drop-down scratch shell.
 keybind = global:cmd+grave_accent=toggle_quick_terminal
 quick-terminal-position = top
 quick-terminal-animation-duration = 0

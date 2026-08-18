@@ -3,12 +3,19 @@
 ![](https://img.shields.io/badge/works%20on-macOS-D376B3.svg)
 ![](https://img.shields.io/badge/works%20on-Linux-DD4814.svg)
 
-Shell, tmux, neovim and git, set up the same way on macOS and Linux, plus a
+Shell, tmux and git, set up the same way on macOS and Linux, plus a
 macOS desktop layer (tiling WM, key remapping, text expansion). One script, one
 set of configs, no framework.
 
-Shells differ by platform on purpose: **bash + brush on macOS**, **zsh on
-Linux**. Both read the same `starship.toml`, `gitconfig` and `tmux.conf`.
+Shells differ by platform on purpose: **fish on macOS** (interactive), **zsh on
+Linux**, with **bash** as the login shell everywhere — ssh, cron, launchd, git
+hooks. They share `gitconfig` and `tmux.conf`; `starship.toml` is used by bash
+and zsh, so it is what you get over ssh.
+
+fish is the macOS default for one concrete reason: it is the only one of the
+three candidates where <kbd>Ctrl</kbd>+<kbd>r</kbd> reaches atuin in **every**
+editing mode; bash covers only two of its three keymaps — see invariant 4. bash
+remains a one-line rollback in `configs/ghostty`.
 
 ## Install
 
@@ -27,16 +34,13 @@ That will:
    then applies [`Brewfile`](Brewfile) for the macOS-only layer.
 2. Install anything the distro does not package (starship, uv, ruff) from
    upstream into `~/.local`, so nothing outside the package step needs root.
-3. Pull a current neovim if the packaged one is older than 0.11, which is the
-   case on Debian and Ubuntu.
-4. Build ble.sh from a pinned commit (skip with `--no-blesh`).
-5. On Linux, clone the three zsh plugins.
-6. Scaffold the untracked machine-specific files and install a `gitleaks`
+3. On Linux, clone the three zsh plugins.
+4. Scaffold the untracked machine-specific files and install a `gitleaks`
    pre-commit hook.
-7. Symlink every config — portable ones everywhere, macOS ones only on macOS.
-8. Set the default shell: Homebrew bash on macOS, zsh on Linux.
+5. Symlink every config — portable ones everywhere, macOS ones only on macOS.
+6. Set the login shell: Homebrew bash on macOS, zsh on Linux.
 
-Neovim installs its own plugins on first launch. Re-running the script is safe:
+Re-running the script is safe:
 any real file it would replace is moved into a timestamped `.backup-<stamp>/`
 directory first — one per run, so re-running can never overwrite an earlier
 backup — and anything already correctly linked is left alone.
@@ -44,8 +48,7 @@ backup — and anything already correctly linked is left alone.
 | Flag | Effect |
 | --- | --- |
 | `--dry-run` | Print every action, change nothing. CI asserts this is genuinely inert. |
-| `--no-packages` | Link configs only; skip package installs and the ble.sh build. |
-| `--no-blesh` | Skip building ble.sh from source. |
+| `--no-packages` | Link configs only; skip all package installs. |
 
 `./doctor.sh` is read-only and asserts the things that break silently — see
 [Invariants](#invariants-that-break-silently). `./doctor.sh --static` runs only
@@ -59,16 +62,13 @@ than in a workflow file that would drift from it.
 | Tool | Replaces | Why |
 | --- | --- | --- |
 | **starship** | oh-my-zsh themes | One binary, one TOML, no framework. Shell starts in ~90ms |
-| **eza** | `ls` | Colours, git status, tree mode |
-| **zoxide** | `cd` | Jumps to directories by frecency. Aliased over `cd` |
+| **zoxide** | `cd` | Jumps to directories by frecency via `z` / `zi`; `cd` is left alone |
 | **fd** | `find` | Sane defaults, respects gitignore |
-| **ripgrep** | `ag` | Faster, and what fzf and neovim search with |
+| **ripgrep** | `ag` | Faster, and what fzf searches with |
 | **bat** | `cat` | Syntax highlighting and paging |
 | **delta** | `git diff` output | Side-by-side, syntax-highlighted diffs |
 | **fzf** + **fzf-tab** | ctrl-p, tab completion | Fuzzy history, files and completion menus |
-| **lazygit** | git porcelain | Staging hunks without leaving the terminal |
 | **uv** + **ruff** | pip, pyenv, black, flake8 | One Python toolchain, one linter/formatter |
-| **btop** | `top` | Readable process and resource view |
 
 ## What gets linked
 
@@ -82,7 +82,6 @@ Portable — linked on macOS and Linux alike:
 | `configs/inputrc` | `~/.inputrc` |
 | `configs/starship.toml` | `~/.config/starship.toml` |
 | `configs/tmux.conf` | `~/.tmux.conf` |
-| `configs/nvim-init.lua` | `~/.config/nvim/init.lua` |
 | `configs/gitconfig` | `~/.gitconfig` |
 | `configs/gitignore_global` | `~/.gitignore_global` |
 | `configs/editorconfig` | `~/.editorconfig` |
@@ -95,9 +94,7 @@ leave dead config behind:
 
 | Repo file | Symlinked to | What it is |
 | --- | --- | --- |
-| `configs/brushrc` | `~/.brushrc` | brush-only settings (near-empty by design) |
-| `configs/aerospace.toml` | `~/.aerospace.toml` | Tiling WM: workspaces, keybinds, app→workspace rules |
-| `configs/ghostty` | `~/.config/ghostty/config` | Terminal — and where brush is launched |
+| `configs/ghostty` | `~/.config/ghostty/config` | Terminal — theme, and where the interactive shell is launched |
 | `configs/karabiner.edn` | `~/.config/karabiner.edn` | Keyboard remapping source; `goku` compiles it |
 | `configs/hammerspoon/` | `~/.hammerspoon/` | System event glue only (see below) |
 | `macos/defaults.sh` | — | `defaults` snapshots for GUI-only apps + system settings |
@@ -118,6 +115,12 @@ scaffolds each of these with a comment explaining what goes in it:
 | `~/.config/espanso/match/local.yml` | name, email, internal URLs | espanso |
 | `~/.hammerspoon/local.lua` | work hostnames, SSIDs | `urldispatch.lua`, `wifi.lua` |
 | `~/.config/dotfiles/denylist` | regexes that must never appear in a tracked file | pre-commit hook, `doctor.sh` |
+
+> **Do not use `git config --global` on this machine.** `~/.gitconfig` is a
+> symlink into this repo, so `--global` writes work emails and internal URL
+> rewrites straight into a tracked, public file. Edit `~/.gitconfig.local`
+> instead, or use `git config --file ~/.gitconfig.local`. The denylist check and
+> the pre-commit hook both catch it, but only after you have already written it.
 
 Four independent defences keep credentials out of git, and all four matter — a
 credential in history is the one mistake a normal commit cannot undo:
@@ -164,37 +167,38 @@ gitleaks dir . --no-banner
 
 | | macOS | Linux |
 | --- | --- | --- |
-| **Interactive** | [brush](https://github.com/reubeno/brush), launched by Ghostty | zsh + three plugins |
+| **Interactive** | [fish](https://fishshell.com), launched by Ghostty | zsh + three plugins |
 | **Login / system** | Homebrew bash 5.x | zsh |
-| **Config** | `configs/bashrc` (both shells) | `configs/zshrc` |
+| **Config** | `~/.config/fish/` (untracked, see below) | `configs/zshrc` |
 
-On macOS, brush and bash read the **same `~/.bashrc`**. brush is a Rust
-bash-reimplementation with syntax highlighting and autosuggestions built in, and
-it consumes bash config unchanged — it parses `.bashrc` and atuin's init, runs
-every alias, `set -o vi`, and every `shopt` used here. bash stays the login and
-system shell (ssh, cron, launchd, git hooks, Hammerspoon's `hs.execute()`)
-because brush is v0.4: `select` is unsupported and traps/options are still in
-progress upstream. That is fine for a terminal window and wrong for launchd.
+fish is the interactive shell because it is the only candidate where
+<kbd>Ctrl</kbd>+<kbd>r</kbd> reaches atuin in every editing mode — see invariant
+4. bash stays the login and system shell (ssh, cron, launchd, git hooks,
+Hammerspoon's `hs.execute()`) and reads `configs/bashrc`, which is deliberately
+plain: no line-editor layer, because bash is almost never interactive here.
 
-ble.sh gives bash the fish-like layer (autosuggestions, syntactic highlighting,
-vim modes) and is **guarded off under brush**, which supplies its own. It has no
-package anywhere, so `install.sh` builds it from a pinned commit — upstream's
-newest tag is from 2023 while master is committed to weekly, so a version tag
-would pin you to genuinely old code. Skip it with `--no-blesh`.
+**`configs/bashrc` and `configs/starship.toml` still matter** — they are what you
+get over ssh, and on Linux. The prompt work lives there, not in fish.
 
-zsh is untouched on Linux and `configs/zshrc` is still maintained for it; the two
+**Known gap:** fish's own config is **not tracked in this repo.** `~/.config/fish/`
+holds a hand-written prompt and machine-specific paths, so a fresh Mac gets fish
+with no configuration. Tracking it needs the same sanitising treatment as
+everything else here and has not been done yet.
+
+zsh is untouched on Linux and `configs/zshrc` is still maintained for it; the
 shells coexist rather than one replacing the other.
 
 ### Rollback
 
-Off brush — one line in `configs/ghostty`:
+Off fish — one line in `configs/ghostty` (and set `shell-integration = bash`):
 
 ```
 command = /opt/homebrew/bin/bash --login
 ```
 
-Nothing else depends on brush, and bash is already the login shell, so that is
-the only edit.
+bash is already the login shell, so that is the only edit. Note the trade-off in
+invariant 4: under bash, atuin does not bind <kbd>Ctrl</kbd>+<kbd>r</kbd> in vi
+normal mode, so `configs/bashrc` rebinds it explicitly.
 
 ## macOS desktop layer
 
@@ -202,20 +206,19 @@ One tool per job, and the tool whose config is text wins.
 
 | Job | Owner | Config |
 | --- | --- | --- |
-| Window tiling, workspaces | AeroSpace | `configs/aerospace.toml` |
 | Key remapping | Karabiner + goku | `configs/karabiner.edn` |
 | Text expansion everywhere | espanso | `configs/espanso/match/*.yml` |
 | Shell history search | atuin | `configs/atuin.toml` |
 | **System events** | **Hammerspoon** | `configs/hammerspoon/` |
 | GUI-only app prefs | `defaults` snapshots | `macos/defaults.sh` (output untracked) |
 
-Hammerspoon is deliberately the smallest piece. It does not manage windows —
-AeroSpace does that better and declaratively. What Hammerspoon owns is the
-category nothing else exposes: reacting to macOS system events.
+Hammerspoon is deliberately the smallest piece. Window management is plain
+macOS. What Hammerspoon owns is the category nothing else exposes: reacting to
+macOS system events.
 
 - `modules/wifi.lua` — SSID change → classify network trust zone
-- `modules/camera.lua` — camera in use → focused-window border turns red
-- `modules/power.lua` — sleep/wake → eject disks, restore borders
+- `modules/camera.lua` — camera starts/stops → on-screen "on air" alert
+- `modules/power.lua` — sleep/wake → eject disks
 - `modules/usbconsole.lua` — USB serial adapter attached → offer a `picocom` session
 - `modules/urldispatch.lua` — route work hostnames to the work browser profile
 
@@ -239,8 +242,8 @@ the driver extension is approved.
 Everything here needs either your password or a click in System Settings. These
 four are genuinely unautomatable; anything else the script now handles itself.
 
-1. **Accessibility + Input Monitoring** for Hammerspoon, AeroSpace,
-   Karabiner-Elements, espanso → System Settings ▸ Privacy & Security
+1. **Accessibility + Input Monitoring** for Hammerspoon, Karabiner-Elements and
+   espanso → System Settings ▸ Privacy & Security
 2. **Karabiner driver extension** → System Settings ▸ General ▸ Login Items &
    Extensions ▸ Driver Extensions ▸ enable Karabiner-Elements. Until this is
    approved Karabiner remaps **nothing** and writes no `karabiner.json`, which
@@ -257,52 +260,68 @@ four are genuinely unautomatable; anything else the script now handles itself.
 ## Invariants that break silently
 
 Each of these was found by testing, and each fails **without any error** — a
-reasonable-looking cleanup breaks them and nothing tells you. `doctor.sh`
-asserts every one; the rationale is commented at the point of use. Eight of the
-ten are pure repo-content checks, so `doctor.sh --static` catches them in CI
-before a change is ever installed; the other two (#6 generated `karabiner.json`,
-and the live half of #5) need a real machine.
+reasonable-looking cleanup breaks them and nothing tells you. `doctor.sh` asserts
+every one; the rationale is commented at the point of use. Four of the six are
+pure repo-content checks, so `doctor.sh --static` catches them in CI before a
+change is ever installed; #4 (Ghostty's second config) and #5 (generated
+`karabiner.json`) need a real machine.
 
 Each assertion has been verified to actually fail when the invariant is broken —
 a check that cannot fail is worse than no check, because it reads as coverage.
-Invariant 8 is the cautionary example: the original render-and-check-stderr test
-passed on a genuinely broken config, because `git_branch` only evaluates inside a
-git repository and starship stays silent when a module never runs. It is now
-checked two ways, one of which needs neither starship nor a git repo.
+Invariant 6 is the cautionary example: the original render-and-check-stderr test
+passed on a genuinely broken config, because a module starship never evaluates
+never complains. It is now checked two ways, one of which needs neither starship
+nor a git repo.
 
 1. **PATH is set above the interactive guard in `bashrc`.** Below it, every
    non-interactive shell — `hs.execute()`, launchd, cron, git hooks — gets no
    PATH. The classic "works in my terminal, not from the app" bug.
-2. **The ble.sh guard tests `BRUSH_VERSION`, never `BASH_VERSION`.** brush
-   deliberately reports `BASH_VERSION=5.2.37`, so a `BASH_VERSION` test matches
-   brush and loads ble.sh into the wrong shell.
-3. **`bashrc` load order is fixed:** ble.sh (`--attach=none`, first line) →
-   starship → atuin → `ble-attach` (last line). Wrong order silently stops atuin
-   recording history.
-4. **brush launches from Ghostty's `command =` line with two flags**, not
-   `chsh` (which cannot pass arguments): `--enable-zsh-hooks` is **required for
-   atuin** — without it brush registers `preexec_functions` and never invokes
-   them — and `--enable-highlighting` turns on highlighting. bash stays the
-   login shell.
-5. **No `~/.config/brush/config.toml`.** brush supports one, but the schema is
-   undocumented and unknown keys are silently accepted, so a plausible-looking
-   config is an invisible no-op. `configs/brushrc` is used instead.
-6. **`karabiner.json` is generated, never tracked.** Karabiner replaces a
+2. **In `bashrc`, starship is initialised before atuin.** Bash has no native
+   preexec hook, so both compete for `PROMPT_COMMAND` and the DEBUG trap. atuin
+   first can clobber starship's `PROMPT_COMMAND`.
+3. **<kbd>Ctrl</kbd>+<kbd>r</kbd> must reach atuin, and only fish manages it in
+   every mode.** Recording history and *searching* it are separate capabilities.
+   Every atuin assertion here used to prove only recording, which is how this
+   went unnoticed on a machine that looked healthy:
+
+   - **fish** has a first-class atuin backend and binds it in every mode. This is
+     why fish is the interactive shell.
+   - **bash** binds it in `emacs` and `vi-insert`, but atuin deliberately skips
+     `vi-command` to preserve a line editor's `redo`. fzf then claims that slot,
+     and fzf's widget reads bash's `builtin history` — dozens of lines — not
+     atuin's thousands. In vi mode <kbd>Ctrl</kbd>+<kbd>r</kbd> silently means two
+     different things depending on the mode, and the normal-mode one looks exactly
+     like lost history. `configs/bashrc` rebinds it explicitly.
+   - **brush** (removed) could not bind it at all: it drives its line editor with
+     reedline, not GNU readline, and its `bind` builtin accepted a binding then
+     registered nothing — `bind -p` printed zero lines where bash prints 422.
+
+   `doctor.sh` reports which mechanism applies rather than assuming readline. It
+   cannot prove the live binding from a script: a non-interactive shell engages no
+   line editor. Check by hand, in the shell: `bind -p | grep C-r`.
+4. **Ghostty reads *two* config files on macOS, and the other one wins.** Besides
+   `~/.config/ghostty/config` it reads
+   `~/Library/Application Support/com.mitchellh.ghostty/config`, whose scalars
+   override the repo's — while list-valued keys like `font-family` accumulate from
+   both. Ghostty writes a template there on first launch, so it exists whether or
+   not you put it there. A stale one silently set `command` and `theme`, so the
+   repo's shell and palette were inert for weeks while every repo-content check
+   passed. **Reading `configs/ghostty` proves intent, not reality** — `doctor.sh`
+   asks `ghostty +show-config` what was actually resolved and compares it against
+   the repo, including that `shell-integration` names the same shell as `command`.
+5. **`karabiner.json` is generated, never tracked.** Karabiner replaces a
    symlinked JSON with a real file. `karabiner.edn` is the source; `goku`
-   compiles it; `.gitignore` excludes the output.
-7. **In `aerospace.toml`, all bindings stay above the `[[on-window-detected]]`
-   blocks.** A bare `key = value` after a table array binds to *that table* —
-   valid TOML, binding never fires.
-8. **In `starship.toml`, literal parens must be escaped** (`[\(](240)`).
-   Unescaped, starship reads `(` as a conditional group and the module silently
-   renders nothing. TOML parsing will not reveal it, and neither will
-   `starship prompt` run outside a git repo — the module has to actually
-   evaluate before starship complains.
-9. **The brush flag check uses `ps -o command= -p $$`.** Do not simplify it to
-   test `preexec_functions` — atuin populates that array whether or not the flag
-   is present, so that check always passes.
-10. **ble.sh is pinned to a commit SHA**, not a tag (newest tag is 2023; master
-    ships weekly).
+   compiles it; `.gitignore` excludes the output. Two traps: goku needs a profile
+   named exactly `Default` (Karabiner creates `"Default profile"`), and `goku`
+   exits 1 even on success, so its exit status cannot gate anything — test its
+   `--dry-run` stdout instead.
+6. **In `starship.toml`, literal `(` and `$` must be escaped** — `[\(](dim)` and
+   `[\$](cyan)`. Unescaped, starship reads `(` as a conditional group and `$` as
+   the start of a variable name, and the module or indicator silently renders
+   **nothing**. TOML parsing will not reveal it, and neither will
+   `starship prompt` unless the module actually evaluates: `git_branch` needs a
+   git repo, and `git_status.stashed` needs a repo **with a stash**. `stashed`
+   shipped broken for exactly that reason, so both are also checked statically.
 
 ## tmux
 
@@ -317,35 +336,10 @@ Prefix is <kbd>Ctrl</kbd> + <kbd>a</kbd>.
 | Copy mode | <kbd>Prefix</kbd> <kbd>Enter</kbd>, then <kbd>v</kbd> to select, <kbd>y</kbd> to copy |
 | Reload config | <kbd>Prefix</kbd> <kbd>r</kbd> |
 
-<kbd>Ctrl</kbd> + <kbd>h/j/k/l</kbd> crosses tmux panes and neovim splits alike.
+<kbd>Ctrl</kbd> + <kbd>h/j/k/l</kbd> moves between tmux panes.
 Copying with <kbd>y</kbd> goes to the system clipboard via `pbcopy` on macOS and
 `wl-copy` or `xclip` on Linux — install one of those on Linux for clipboard
 integration.
-
-## Neovim
-
-Leader is <kbd>,</kbd>. Needs neovim 0.11+, which the installer takes care of.
-
-| Action | Binding |
-| --- | --- |
-| Toggle file tree | <kbd>Ctrl</kbd> + <kbd>n</kbd> |
-| Find files | <kbd>Ctrl</kbd> + <kbd>p</kbd> |
-| Search file contents | <kbd>Ctrl</kbd> + <kbd>f</kbd> |
-| Switch buffer | <kbd>Leader</kbd> <kbd>b</kbd> |
-| Search this buffer | <kbd>Leader</kbd> <kbd>/</kbd> |
-| Replace word under cursor | <kbd>Leader</kbd> <kbd>s</kbd> |
-| Clear search highlight | <kbd>Leader</kbd> <kbd>Space</kbd> |
-| Go to definition / references | <kbd>g</kbd><kbd>d</kbd> / <kbd>g</kbd><kbd>r</kbd> |
-| Hover docs | <kbd>K</kbd> |
-| Rename / code action | <kbd>Leader</kbd> <kbd>rn</kbd> / <kbd>Leader</kbd> <kbd>ca</kbd> |
-| Comment line / selection | `gcc` / `gc` (built into neovim) |
-
-Language servers are installed by mason, not by hand — `lua_ls`, `ruff`,
-`bashls` and `yamlls` come by default, and `:Mason` adds more. Python files are
-formatted with ruff on save. Plugins update with `:Lazy sync`.
-
-The whole config is one commented file, `configs/nvim-init.lua`, so everything
-you might want to change is visible in one place.
 
 ## Terminal font
 
@@ -364,5 +358,5 @@ unzip -o Hack.zip && rm Hack.zip && fc-cache -f
 ## Requirements
 
 git 2.35+ for the `zdiff3` conflict style. Everything else degrades quietly:
-each tool in `~/.zshrc` is wired up only if installed, and git falls back to
-`less` when delta is missing.
+each tool is wired up only if installed, and git falls back to `less` when delta
+is missing.
