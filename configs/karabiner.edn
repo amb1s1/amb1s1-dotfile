@@ -47,6 +47,35 @@
            [:!CTOSl :right_arrow]]}
 
   ;; ------------------------------------------------------------------
+  ;; The rest of the vi motion set, on the same hyper layer.
+  ;;
+  ;; WHY: vi mode is configured in three places — fish_vi_key_bindings,
+  ;; `set -o vi` in bashrc, and `jj` in inputrc — but none of it exists in GUI
+  ;; apps. In Slack, Obsidian, a browser field or any native text box you fall
+  ;; back to arrow keys. Hyper is the one modifier layer no app claims, so it can
+  ;; carry these motions everywhere without conflicting with an app shortcut.
+  ;;
+  ;; Deliberately NOT using alt-hjkl for this, even though removing AeroSpace
+  ;; freed it: Ghostty sets macos-option-as-alt, so alt+h/j/k/l already send
+  ;; Esc-h and friends, which readline and fish use for word motions. Taking that
+  ;; slot globally would break the terminal to improve the GUI.
+  ;;
+  ;; Letters chosen to match vi rather than the macOS keys they emit:
+  ;;   w/b  word forward/back      a/e  line start/end
+  ;;   u/d  page up/down           g    top of document
+  ;;   x    forward delete
+  ;; ------------------------------------------------------------------
+  {:des "hyper + vi motions (word, line, page) for GUI apps"
+   :rules [[:!CTOSw :!Oright_arrow]
+           [:!CTOSb :!Oleft_arrow]
+           [:!CTOSa :!Cleft_arrow]
+           [:!CTOSe :!Cright_arrow]
+           [:!CTOSu :page_up]
+           [:!CTOSd :page_down]
+           [:!CTOSg :!Cup_arrow]
+           [:!CTOSx :delete_forward]]}
+
+  ;; ------------------------------------------------------------------
   ;; Right-hand modifiers are dead weight on a laptop. Reclaim right_option
   ;; as a second Escape-ish key is a matter of taste; left as an example of
   ;; a plain remap you can delete.
