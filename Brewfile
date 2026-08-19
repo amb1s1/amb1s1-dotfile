@@ -35,6 +35,7 @@ brew "fish"                  # THE interactive shell; configs/ghostty launches i
 cask "ghostty"               # config: configs/ghostty -> ~/.config/ghostty/config
 brew "atuin"                 # history; config: configs/atuin.toml
 brew "gitleaks"              # pre-commit secret scanning
+brew "direnv"                # auto-activates .venv on cd; see configs/bashrc
 
 # --- Window management / input ----------------------------------------------
 cask "hammerspoon"                  # system-event glue; config: configs/hammerspoon/

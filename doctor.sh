@@ -73,6 +73,7 @@ check_link ".config/starship.toml"     "configs/starship.toml"
 check_link ".tmux.conf"                "configs/tmux.conf"
 check_link ".gitconfig"                "configs/gitconfig"
 check_link ".config/atuin/config.toml" "configs/atuin.toml"
+check_link ".ssh/config.shared"        "configs/ssh_config"
 
 if is_macos; then
   check_link ".config/ghostty/config"  "configs/ghostty"
@@ -279,6 +280,29 @@ if [[ -r "$gcfg" ]]; then
     *)
       bad "shell-integration is '$si' but Ghostty launches '$cmdsh' — OSC 133 marks will be lost" ;;
   esac
+fi
+
+# --- ssh: is the shared config actually included, and in effect? --------------
+#
+# ~/.ssh/config is deliberately NOT a symlink into this repo: OrbStack and colima
+# rewrite it, and a symlink would let them write into a public repo. The cost of
+# that choice is that the Include line is the one part nothing guarantees, so
+# assert it — and then assert it is having an effect, because an Include of a
+# missing file is silently ignored by ssh.
+if live; then
+  if grep -q 'config\.shared' "$HOME/.ssh/config" 2>/dev/null; then
+    ok "~/.ssh/config includes config.shared"
+    if command -v ssh >/dev/null 2>&1; then
+      cm="$(ssh -G dotfiles-doctor-probe 2>/dev/null | awk '/^controlmaster /{print $2}')"
+      if [[ "$cm" == "auto" ]]; then
+        ok "ssh resolves the shared defaults (ControlMaster auto)"
+      else
+        bad "ssh does not resolve the shared defaults — is ~/.ssh/config.shared a broken link?"
+      fi
+    fi
+  else
+    warn "~/.ssh/config does not include config.shared — run ./install.sh"
+  fi
 fi
 
 # --- Ghostty's LOADED config: does Ghostty actually use the repo's file? ------

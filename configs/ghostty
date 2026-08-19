@@ -75,7 +75,12 @@ shell-integration = fish
 shell-integration-features = cursor,sudo,title
 
 # --- Scrollback & selection -------------------------------------------------
-scrollback-limit = 100000
+# scrollback-limit is in BYTES, not lines, and 10000000 (10 MB) is Ghostty's own
+# default. This file previously said 100000, which reads like a generous line
+# count but is actually 100 KB — roughly 1% of the default, silently truncating
+# scrollback. Ghostty allocates lazily up to this limit, so a large value does
+# not cost memory until you actually scroll back that far.
+scrollback-limit = 10000000
 copy-on-select = clipboard
 mouse-hide-while-typing = true
 clipboard-read = allow

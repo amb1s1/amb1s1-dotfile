@@ -1,0 +1,100 @@
+# ~/.ssh/config.shared — generic ssh defaults. TRACKED, so nothing
+# employer-specific belongs here.
+#
+# WHY THIS IS AN *INCLUDED* FILE AND NOT ~/.ssh/config ITSELF:
+# OrbStack and colima both rewrite ~/.ssh/config to insert their own Include
+# lines, and OrbStack requires its line to sit above every Host block. If
+# ~/.ssh/config were a symlink into this repo, those tools would write machine
+# paths — and anything else they choose — straight into a public repo. So
+# ~/.ssh/config stays untracked and tool-writable, and ends with:
+#
+#     Include ~/.ssh/config.shared
+#
+# ORDER MATTERS: for most keywords ssh uses the FIRST value it obtains, so
+# host-specific blocks in ~/.ssh/config win over the `Host *` defaults below.
+# That is why the Include goes at the END, not the top.
+#
+# Your host blocks, usernames, keys, jump hosts and CanonicalDomains all stay in
+# the untracked ~/.ssh/config. Check what ssh actually resolves for a host with:
+#     ssh -G <host> | less
+
+Host *
+    # --- Connection reuse ----------------------------------------------------
+    # ssh is the single most-used command here (1091 invocations in ~9 months),
+    # frequently to the same handful of hosts. Multiplexing makes every repeat
+    # connection reuse the first one's TCP session and authentication, which is
+    # the difference between ~1s and instant.
+    #
+    # %C is a hash of (host, port, user, jump) — used instead of %r@%h:%p
+    # because a unix socket path is capped near 104 bytes and long FQDNs blow
+    # past it, which fails with a confusing "unix_listener: too long" error.
+    ControlMaster auto
+    ControlPath ~/.ssh/cm-%C
+    ControlPersist 10m
+
+    # --- Short-name canonicalisation -----------------------------------------
+    # Turns `ssh shorthost` into the FQDN, so the same box stops being reachable
+    # under two different names (which also means two known_hosts entries and two
+    # control sockets). This is INERT until CanonicalDomains is set, and that is
+    # employer-specific, so it lives in the untracked ~/.ssh/config:
+    #
+    #     Host *
+    #         CanonicalDomains internal.example.net other.example.net
+    #
+    # MaxDots 0 means only dot-free names are canonicalised, so an FQDN you type
+    # in full is never rewritten.
+    CanonicalizeHostname yes
+    CanonicalizeFallbackLocal yes
+    CanonicalizeMaxDots 0
+
+    # --- Keepalives ----------------------------------------------------------
+    # Console and jump sessions sit idle for long stretches; without these a
+    # NAT or firewall silently drops the session and the terminal just hangs.
+    ServerAliveInterval 30
+    ServerAliveCountMax 6
+    TCPKeepAlive yes
+
+    # --- Fail fast -----------------------------------------------------------
+    # `-o ConnectTimeout=...` was typed 115 times by hand. A host-specific block
+    # earlier in ~/.ssh/config still overrides this, since first value wins.
+    ConnectTimeout 10
+
+    # --- Agent -------------------------------------------------------------
+    # IgnoreUnknown must precede UseKeychain: UseKeychain is an Apple extension
+    # and plain OpenSSH on Linux aborts with "Bad configuration option", which
+    # would break this shared file on every non-mac.
+    IgnoreUnknown UseKeychain
+    UseKeychain yes
+    AddKeysToAgent yes
+
+    # Readable known_hosts, so you can grep and remove a stale entry by name.
+    HashKnownHosts no
+
+# --- Deliberately NOT set here -----------------------------------------------
+#
+#   IdentitiesOnly yes    Restricts auth to keys named in the config. Correct
+#                         per-host (your config already does this), wrong
+#                         globally: any host without an IdentityFile stops
+#                         being able to offer agent keys at all.
+#
+#   BatchMode yes         You passed this 155 times, but always for scripted
+#                         calls. Globally it disables every password and
+#                         passphrase prompt, so an interactive login just fails
+#                         instead of asking. Keep it on the command line, or in
+#                         a Host block used only by automation.
+#
+#   StrictHostKeyChecking Leave at the default. `accept-new` per-host (as your
+#                         config does for lab gear) is a deliberate, scoped
+#                         decision; `no` globally silently accepts MITM.
+#
+# --- Legacy network gear -----------------------------------------------------
+# Old switches, PDUs and console servers often only speak algorithms modern
+# OpenSSH disables. The `+` prefix APPENDS to the default set rather than
+# replacing it, so modern hosts are unaffected. Copy this into a Host block for
+# the specific gear that needs it — never into `Host *`:
+#
+#     Host lab-console-*
+#         Ciphers +aes256-cbc
+#         KexAlgorithms +diffie-hellman-group1-sha1,diffie-hellman-group-exchange-sha1
+#         HostkeyAlgorithms +ssh-rsa
+#         PubkeyAcceptedAlgorithms +ssh-rsa

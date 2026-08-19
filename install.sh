@@ -286,6 +286,37 @@ EOF
   fi
 }
 
+# ~/.ssh/config is NOT symlinked into this repo, deliberately. OrbStack and
+# colima both rewrite it to insert their own Include lines, and OrbStack insists
+# on being above every Host block — so a symlink would let those tools write
+# machine paths into a public repo. Instead the generic half is linked in as
+# ~/.ssh/config.shared and pulled in with one Include line.
+#
+# The line goes LAST because ssh takes the FIRST value it obtains for most
+# keywords: host-specific blocks must beat these fallbacks.
+ensure_ssh_include() {
+  local cfg="$HOME/.ssh/config"
+  if grep -q 'config\.shared' "$cfg" 2>/dev/null; then
+    info "$HOME/.ssh/config already includes config.shared"
+    return 0
+  fi
+  if $DRY_RUN; then
+    printf '    [dry-run] append "Include ~/.ssh/config.shared" to %s\n' "$cfg"
+    return 0
+  fi
+  run "mkdir -p '$HOME/.ssh'"
+  run "chmod 700 '$HOME/.ssh'"
+  info "Adding the shared-defaults Include to ~/.ssh/config"
+  {
+    printf '\n# --- Shared tracked defaults ---------------------------------------------\n'
+    printf '# MUST stay last: ssh takes the FIRST value it obtains for most keywords,\n'
+    printf '# so host blocks above win over these generic fallbacks.\n'
+    printf '# Source: this repo, configs/ssh_config -> ~/.ssh/config.shared\n'
+    printf 'Include ~/.ssh/config.shared\n'
+  } >> "$cfg"
+  chmod 600 "$cfg"
+}
+
 # A commit containing a credential cannot be cleaned up with a normal commit,
 # so block it at the source.
 install_gitleaks_hook() {
@@ -405,6 +436,7 @@ link_configs() {
   link configs/editorconfig     .editorconfig
   link configs/words            .words
   link configs/atuin.toml       .config/atuin/config.toml
+  link configs/ssh_config       .ssh/config.shared
   link configs/espanso/config/default.yml .config/espanso/config/default.yml
   link configs/espanso/match/base.yml     .config/espanso/match/base.yml
   link configs/espanso/match/netops.yml   .config/espanso/match/netops.yml
@@ -622,6 +654,7 @@ main() {
   save_git_identity
   link_configs
   link_macos_configs
+  ensure_ssh_include
   macos_special_cases
   set_default_shell
 
